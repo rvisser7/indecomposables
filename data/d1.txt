@@ -1,4 +1,0 @@
-lmfdb_label|num_indecomposables|indecomposables
-string|int|int[]
-
-1.1.1.1|1|[1]

@@ -1,0 +1,4 @@
+lmfdb_label|discriminant|num_indecomposables|indecomposables
+string|numeric|numeric|numeric[]
+
+1.1.1.1|1|1|[1]
