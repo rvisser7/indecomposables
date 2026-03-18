@@ -8,4 +8,4 @@ Given a number field $K$, it's known that there are only finitely many indecompo
 
 Sage code to enumerate all additively indecomposable elements (modulo totally positive units) is provided in the `scripts` folder, tables of data is given in the `data` folder, and various plots of the data is given in the `plots` folder.
 
-Contributions to either the code or data are very welcome!
+Any contributions to either the code or data are very welcome!
