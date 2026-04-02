@@ -119,13 +119,53 @@ indecomps = nfd.compute_indecomposables_optimized()  # Uses Dress-Scharlau autom
 - Dress, A.; Scharlau, W. (1975). "Indecomposable integral representations of finite groups over real quadratic number fields". Advances in Mathematics, 17(3), 231-273.
 - Kala, Vítězslav. "An effective tool for determining indecomposable elements of orders". arXiv:2108.15387
 
-### `simplest_cubic.sage`
+### `simplest_cubic.py`
 
-*TODO:* Implement algorithm for simplest cubic fields using classification by Kala-Tinková and Gil-Muñoz-Tinková.
+Efficient implementation of Kala-Tinková classification for simplest cubic fields.
 
-References:
-- Kala, Vítězslav; Tinková, Markéta. "Indecomposable elements in number fields"
-- Gil-Muñoz, Daniel; Tinková, Markéta. "On indecomposables in simplest cubic fields"
+**Class: `SimplestCubicField`**
+
+Computes indecomposables in simplest cubic fields Q[x]/(x³ - n*x² - (n+3)*x - 1) where Z[ρ] has index 1 or 3 in the maximal order, using explicit formulas from Kala-Tinková and Gil-Muñoz-Tinková.
+
+**Key Methods:**
+- `compute_indecomposables_kala_tinkova(verbose=True)` - Main computation using explicit classification
+- Properties: `discriminant`, `regulator`, `index`, `can_use_classification`
+
+**Key Advantages:**
+- ⚡ Extremely fast: direct enumeration from formulas (no search required)
+- Uses mathematical structure rather than brute force enumeration
+- Handles both index 1 (O_K = Z[ρ]) and index 3 ([O_K : Z[ρ]] = 3) cases
+- Provides exact theoretical bounds on counts and maximal norms
+
+**Usage:**
+```python
+from simplest_cubic import SimplestCubicField
+
+# Simplest cubic field with n=1: Q[x]/(x^3 - x^2 - 4*x - 1)
+scf = SimplestCubicField(1)
+indecomps = scf.compute_indecomposables_kala_tinkova()
+print(f"Found {len(indecomps)} indecomposables")
+
+# Or use with NumberFieldData for automatic optimization
+from main import NumberFieldData
+from sage.all import QQ, PolynomialRing
+
+R = PolynomialRing(QQ, 'x')
+K = QQ.extension(x**3 - x**2 - 4*x - 1, names='rho')
+nfd = NumberFieldData(field=K)
+indecomps = nfd.compute_indecomposables_optimized()  # Uses Kala-Tinková automatically
+```
+
+**Algorithm Overview:**
+1. **Field Classification**: Check if Z[ρ] has index 1 or 3 in O_K
+2. **Index 1 Case** (O_K = Z[ρ]): Enumerate from Theorem 1.2 formulas with parameters v, w
+3. **Index 3 Case** ([O_K : Z[ρ]] = 3): Enumerate from Theorem 1.1 with 8 different cases and parameters v, r
+4. **Normalization**: Remove duplicates up to multiplication by totally positive units
+5. **Verification**: Check against theoretical predictions for counts and maximal norms
+
+**References:**
+- Kala, Vítězslav; Tinková, Markéta. "Universal quadratic forms, small norms and traces in families of number fields". Theorem 1.2 (index 1 case)
+- Gil-Muñoz, Daniel; Tinková, Markéta. "Additive structure of non-monogenic simplest cubic fields". Theorem 1.1 (index 3 case)
 
 ## Algorithm Details
 

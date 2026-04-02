@@ -79,14 +79,17 @@ See [`.github/workflows/python-app.yml`](.github/workflows/python-app.yml) for w
 ```
 indecomposables/
 ├── scripts/           # Core computation code
-│   ├── main.py       # NumberFieldData class
-│   ├── real_quadratic.sage      # (TODO) Quadratic field optimization
-│   └── simplest_cubic.sage      # (TODO) Cubic field optimization
+│   ├── main.py       # NumberFieldData class with optimized algorithm selection
+│   ├── real_quadratic.py      # Dress-Scharlau algorithm for quadratic fields
+│   ├── simplest_cubic.py      # Kala-Tinková classification for cubic fields
+│   ├── demo_real_quadratic.py # Performance demo for quadratic fields
+│   └── demo_simplest_cubic.py # Performance demo for cubic fields
 ├── data/             # Database files (pipe-delimited, PostgreSQL-compatible)
 ├── plots/            # Visualization and analysis
 ├── tests/            # Test suite
-│   ├── test_main.py  # Main tests
-│   └── conftest.py   # Pytest configuration
+│   ├── test_main.py          # Main NumberFieldData tests
+│   ├── test_real_quadratic.py # RealQuadraticField tests
+│   └── test_simplest_cubic.py # SimplestCubicField tests
 └── Makefile          # Development commands
 ```
 

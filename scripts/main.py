@@ -15,6 +15,14 @@ except ImportError:
     HAS_RQ = False
     RQ = None
 
+# Try to import SimplestCubicField if available (allow graceful degradation)
+try:
+    from simplest_cubic import SimplestCubicField as SCF
+    HAS_SCF = True
+except ImportError:
+    HAS_SCF = False
+    SCF = None
+
 
 class NumberFieldData:
     """
@@ -392,6 +400,9 @@ class NumberFieldData:
         For real quadratic fields (degree 2), uses the Dress-Scharlau continued fraction
         method which is much faster than the general brute force approach.
         
+        For simplest cubic fields (degree 3) where Z[ρ] has index 1 or 3 in the maximal order,
+        uses the Kala-Tinková classification which is much faster than brute force.
+        
         For other fields, falls back to the general brute force method.
         
         Args:
@@ -423,6 +434,35 @@ class NumberFieldData:
             except Exception as e:
                 if verbose:
                     print(f"Could not use Dress-Scharlau: {e}")
+                    print("Falling back to brute force method")
+        
+        # Use Kala-Tinková for simplest cubic fields
+        if self.degree == 3 and HAS_SCF:
+            if verbose:
+                print("Checking if field is a simplest cubic field...")
+            
+            try:
+                # Check if this is a simplest cubic field of the form x^3 - n*x^2 - (n+3)*x - 1
+                poly = self.K.defining_polynomial()
+                if poly.degree() == 3:
+                    # Check if it matches the simplest cubic form
+                    # x^3 - n*x^2 - (n+3)*x - 1
+                    a3, a2, a1, a0 = poly.list()
+                    if a3 == 1 and a0 == -1 and a1 == -(a2 + 3):
+                        n = -a2  # Since -n*x^2, so a2 = -n
+                        if n in ZZ and n >= -1:
+                            scf = SCF(n, precision=self.precision)
+                            if scf.can_use_classification:
+                                if verbose:
+                                    print(f"Using Kala-Tinková classification for simplest cubic field with n = {n}")
+                                self._indecomposables = scf.compute_indecomposables_kala_tinkova(verbose=verbose)
+                                return self._indecomposables
+                            else:
+                                if verbose:
+                                    print(f"Simplest cubic field with n = {n} has index {scf.index}, cannot use classification")
+            except Exception as e:
+                if verbose:
+                    print(f"Could not use Kala-Tinková: {e}")
                     print("Falling back to brute force method")
         
         # Fall back to general brute force
