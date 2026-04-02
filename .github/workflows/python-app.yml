@@ -51,7 +51,13 @@ jobs:
     - name: Check Python syntax
       run: |
         python -m py_compile scripts/main.py
+        python -m py_compile scripts/real_quadratic.py
+        python -m py_compile scripts/simplest_cubic.py
+        python -m py_compile scripts/demo_real_quadratic.py
+        python -m py_compile scripts/demo_simplest_cubic.py
         python -m py_compile tests/test_main.py
+        python -m py_compile tests/test_real_quadratic.py
+        python -m py_compile tests/test_simplest_cubic.py
 
   # Job 2: Fast minimal tests (no Sage required)
   test-minimal:
@@ -73,53 +79,77 @@ jobs:
     
     - name: Run minimal tests (syntax and imports only)
       run: |
-        python -m pytest tests/test_main.py::TestMinimal -v
+        python -m pytest tests/ -v -k "minimal"
 
   # Job 3: Full tests with Sage
   test-sage:
     name: Full Tests with Sage
     runs-on: ubuntu-latest
-    
-    # Use Ubuntu's apt repositories which have sagemath package
+
+    # Use the official Sage Docker image
     container:
-      image: ubuntu:22.04
-    
+      image: sagemath/sagemath:latest
+      options: --user root
+
     steps:
-    - name: Install system dependencies
+    - name: Install test dependencies
       run: |
         apt-get update -qq
-        apt-get install -y sagemath python3-pytest python3-pytest-cov git
-    
+        apt-get install -y python3-pytest python3-pytest-cov git
+
     - uses: actions/checkout@v4
-    
-    - name: Run full test suite
+
+    - name: Set up Sage environment
       run: |
-        # Use Python from sage environment
-        mkdir -p /tmp/pytest_cache
-        python3 -m pytest tests/test_main.py -v --tb=short --color=yes --capture=no
+        # Make sure we're using the right Python
+        export PYTHONPATH=/home/sage/sage/local/lib/python3.10/site-packages:$PYTHONPATH
+        export PATH=/home/sage/sage:$PATH
+
+        # Verify Sage is working
+        sage --version
+
+    - name: Run full test suite with Sage
+      run: |
+        # Use Sage's Python environment
+        export PYTHONPATH=/home/sage/sage/local/lib/python3.10/site-packages:$PYTHONPATH
+        export PATH=/home/sage/sage:$PATH
+
+        # Run tests with Sage
+        cd /__w/indecomposables/indecomposables
+        python3 -m pytest tests/ -v --tb=short --color=yes -k "not slow" --maxfail=5
 
   # Job 4: Code coverage
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
-    
+
+    # Use Sage Docker image for full coverage
+    container:
+      image: sagemath/sagemath:latest
+      options: --user root
+
     steps:
+    - name: Install test dependencies
+      run: |
+        apt-get update -qq
+        apt-get install -y python3-pytest-cov git
+
     - uses: actions/checkout@v4
-    
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.10"
-    
-    - name: Install dependencies
+
+    - name: Set up Sage environment
       run: |
-        python -m pip install --upgrade pip
-        pip install pytest pytest-cov
-    
-    - name: Generate coverage report (minimal tests only)
+        export PYTHONPATH=/home/sage/sage/local/lib/python3.10/site-packages:$PYTHONPATH
+        export PATH=/home/sage/sage:$PATH
+        sage --version
+
+    - name: Generate coverage report
       run: |
-        python -m pytest tests/test_main.py::TestMinimal --cov=scripts --cov-report=xml --cov-report=term
-    
+        export PYTHONPATH=/home/sage/sage/local/lib/python3.10/site-packages:$PYTHONPATH
+        export PATH=/home/sage/sage:$PATH
+
+        cd /__w/indecomposables/indecomposables
+        python3 -m pytest tests/ -v --tb=short --cov=scripts --cov-report=xml --cov-report=term --maxfail=3 -k "not slow"
+
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
       with:

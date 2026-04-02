@@ -32,7 +32,7 @@ test:
 	python -m pytest tests/ -v
 
 test-minimal:
-	python -m pytest tests/test_main.py::TestMinimal -v
+	python -m pytest tests/ -v -k "minimal"
 
 test-sage:
 	python -m pytest tests/ -v -m "not slow"

@@ -348,6 +348,31 @@ class TestMinimal:
         assert hasattr(main, 'NumberFieldData')
         assert hasattr(main, 'create_field_from_polynomial')
         assert hasattr(main, 'batch_compute_indecomposables')
+    
+    def test_sage_availability(self):
+        """Test Sage availability and graceful degradation."""
+        try:
+            from sage.all import QQ, ZZ, Integer
+            SAGE_AVAILABLE = True
+            
+            # Test basic Sage functionality if available
+            assert QQ(1/2) == QQ(1)/QQ(2)
+            assert ZZ(5).is_prime()
+            assert Integer(10) == 10
+            
+        except ImportError:
+            SAGE_AVAILABLE = False
+        
+        # This test should pass whether Sage is available or not
+        # It just checks that the import logic works
+        assert isinstance(SAGE_AVAILABLE, bool)
+        
+        # Test graceful degradation flags
+        import main
+        assert hasattr(main, 'HAS_RQ')
+        assert hasattr(main, 'HAS_SCF')
+        assert isinstance(main.HAS_RQ, bool)
+        assert isinstance(main.HAS_SCF, bool)
 
 
 if __name__ == "__main__":
