@@ -4,3 +4,18 @@
 
 # For basic functionality (when Sage is available)
 # (Most dependencies come from Sage distribution)
+
+# Development and testing dependencies
+pyflakes
+pytest
+pytest-cov
+pytest-xdist
+pyyaml
+pytest>=7.0
+pytest-cov>=4.0
+flake8>=4.0
+black>=22.0
+
+# Optional: For code quality
+# pylint>=2.0
+# mypy>=0.900
