@@ -1,3 +1,4 @@
+# environment.yml
 name: indecomposables
 channels:
   - conda-forge
@@ -14,9 +15,9 @@ dependencies:
   - sage
 
   # Testing and development tools
+  - parallel
+  - tox
   - pytest
   - pytest-cov
   - flake8
   - black
-  - pip:
-    - -r file:requirements-dev.txt
