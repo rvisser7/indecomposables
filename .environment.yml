@@ -1,0 +1,22 @@
+name: indecomposables
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Core scientific Python stack
+  - python=3.10
+  - pip
+  - numpy
+  - scipy
+  - matplotlib
+
+  # Sage and its dependencies
+  - sage
+
+  # Testing and development tools
+  - pytest
+  - pytest-cov
+  - flake8
+  - black
+  - pip:
+    - -r file:requirements-dev.txt

@@ -17,9 +17,24 @@ Algorithm:
     Normalize up to multiplication by totally positive units
 """
 
-from sage.all import (
-    NumberField, PolynomialRing, QQ, ZZ, Integer, cached_property
-)
+# Try to import Sage modules - graceful degradation if not available
+try:
+    from sage.all import (
+        NumberField, PolynomialRing, QQ, ZZ, Integer, cached_property
+    )
+    SAGE_AVAILABLE = True
+except ImportError:
+    SAGE_AVAILABLE = False
+    # Mock Sage classes for graceful degradation
+    class MockSageObject:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __call__(self, *args, **kwargs):
+            return self
+        def __getattr__(self, name):
+            return self
+    NumberField = PolynomialRing = QQ = ZZ = Integer = MockSageObject()
+    cached_property = property  # Use regular property as fallback
 
 
 class SimplestCubicField:

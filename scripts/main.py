@@ -1,10 +1,28 @@
 # Main Python file for computing indecomposables in totally real number fields
 
-from sage.all import (
-    Set, ZZ, RR, pi, euler_phi, CyclotomicField, gap, RealField, sqrt, prod,
-    QQ, NumberField, PolynomialRing, latex, pari, cached_function, Permutation,
-    sign, Matrix, GF, log, proof, QuadraticField)
-from sage.rings.number_field.bdd_height import bdd_norm_pr_ideal_gens
+# Try to import Sage modules - graceful degradation if not available
+try:
+    from sage.all import (
+        Set, ZZ, RR, pi, euler_phi, CyclotomicField, gap, RealField, sqrt, prod,
+        QQ, NumberField, PolynomialRing, latex, pari, cached_function, Permutation,
+        sign, Matrix, GF, log, proof, QuadraticField)
+    from sage.rings.number_field.bdd_height import bdd_norm_pr_ideal_gens
+    SAGE_AVAILABLE = True
+except ImportError:
+    SAGE_AVAILABLE = False
+    # Mock Sage classes for graceful degradation
+    class MockSageObject:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __call__(self, *args, **kwargs):
+            return self
+        def __getattr__(self, name):
+            return self
+    Set = ZZ = RR = pi = euler_phi = CyclotomicField = gap = RealField = sqrt = prod = MockSageObject()
+    QQ = NumberField = PolynomialRing = latex = pari = cached_function = Permutation = MockSageObject()
+    sign = Matrix = GF = log = proof = QuadraticField = MockSageObject()
+    bdd_norm_pr_ideal_gens = MockSageObject()
+    cached_property = property  # Use regular property as fallback
 import itertools
 
 # Try to import RealQuadraticField if available (allow graceful degradation)
@@ -44,7 +62,13 @@ class NumberFieldData:
             label: LMFDB label for the field (e.g., "3.3.49.1")
             field: A Sage NumberField object (if None, label must be provided)
             metadata: Dict with field metadata (discriminant, regulator, class_number, etc.)
+        
+        Raises:
+            ImportError: If Sage is not available and field computations are attempted
         """
+        if not SAGE_AVAILABLE and field is not None:
+            raise ImportError("Sage is required for field computations")
+            
         self.label = label
         self.K = field
         self.metadata = metadata or {}
@@ -410,7 +434,13 @@ class NumberFieldData:
         
         Returns:
             List of indecomposables (up to multiplication by totally positive units)
+        
+        Raises:
+            ImportError: If Sage is not available
         """
+        if not SAGE_AVAILABLE:
+            raise ImportError("Sage is required for indecomposable computations")
+            
         if self.K is None:
             raise ValueError("Number field K must be set first")
         

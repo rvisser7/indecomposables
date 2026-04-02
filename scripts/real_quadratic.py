@@ -21,10 +21,26 @@ Algorithm:
     5. Normalize up to multiplication by totally positive units
 """
 
-from sage.all import (
-    QuadraticField, RealField, log, Integer, ZZ, continued_fraction, 
-    cached_property, prod
-)
+# Try to import Sage modules - graceful degradation if not available
+try:
+    from sage.all import (
+        QuadraticField, RealField, log, Integer, ZZ, continued_fraction, 
+        cached_property, prod
+    )
+    SAGE_AVAILABLE = True
+except ImportError:
+    SAGE_AVAILABLE = False
+    # Mock Sage classes for graceful degradation
+    class MockSageObject:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __call__(self, *args, **kwargs):
+            return self
+        def __getattr__(self, name):
+            return self
+    QuadraticField = RealField = log = Integer = ZZ = continued_fraction = MockSageObject()
+    cached_property = property  # Use regular property as fallback
+    prod = MockSageObject()
 
 
 class RealQuadraticField:

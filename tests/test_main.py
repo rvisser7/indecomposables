@@ -8,20 +8,51 @@ These tests verify:
 4. Data I/O formatting
 """
 
-import pytest
+# Try to import pytest - graceful degradation if not available
+try:
+    import pytest
+    PYTEST_AVAILABLE = True
+except ImportError:
+    PYTEST_AVAILABLE = False
+    # Mock pytest for minimal functionality
+    class MockPytest:
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: lambda f: f
+        mark = type('mark', (), {'skipif': lambda cond, reason: lambda f: f})()
+    pytest = MockPytest()
+
+# Create conditional skip decorator
+def skipif_sage_not_available(f):
+    """Skip test if Sage is not available."""
+    if PYTEST_AVAILABLE:
+        return pytest.mark.skipif(not SAGE_AVAILABLE, reason="Sage not available")(f)
+    else:
+        return f  # Don't skip if pytest not available
+
 import sys
 import os
 
 # Add scripts directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
-from sage.all import QQ, PolynomialRing, NumberField, ZZ
+# Try to import Sage modules - graceful degradation if not available
+try:
+    from sage.all import QQ, PolynomialRing, NumberField, ZZ
+    SAGE_AVAILABLE = True
+except ImportError:
+    SAGE_AVAILABLE = False
+    # Mock Sage classes for minimal tests
+    class MockSageObject:
+        pass
+    QQ = PolynomialRing = NumberField = ZZ = MockSageObject
+
 from main import NumberFieldData, create_field_from_polynomial, process_degree_file
 
 
 class TestNumberFieldDataConstruction:
     """Test NumberFieldData initialization and basic properties."""
     
+    @skipif_sage_not_available
     def test_init_with_label_only(self):
         """Test creating NumberFieldData with just a label."""
         nfd = NumberFieldData(label="3.3.49.1")
