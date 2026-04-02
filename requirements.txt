@@ -1,0 +1,6 @@
+# Core dependencies for running the indecomposables package
+# Note: Sage should be installed separately as it's not available on PyPI
+# Install via: apt install sagemath (Ubuntu/Debian) or conda install -c conda-forge sage
+
+# For basic functionality (when Sage is available)
+# (Most dependencies come from Sage distribution)

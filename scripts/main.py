@@ -3,9 +3,17 @@
 from sage.all import (
     Set, ZZ, RR, pi, euler_phi, CyclotomicField, gap, RealField, sqrt, prod,
     QQ, NumberField, PolynomialRing, latex, pari, cached_function, Permutation,
-    sign, Matrix, GF, log, proof)
+    sign, Matrix, GF, log, proof, QuadraticField)
 from sage.rings.number_field.bdd_height import bdd_norm_pr_ideal_gens
 import itertools
+
+# Try to import RealQuadraticField if available (allow graceful degradation)
+try:
+    from real_quadratic import RealQuadraticField as RQ
+    HAS_RQ = True
+except ImportError:
+    HAS_RQ = False
+    RQ = None
 
 
 class NumberFieldData:
@@ -376,6 +384,51 @@ class NumberFieldData:
             print(f"\nTotal indecomposables found: {len(all_indecomposables)}")
         
         return all_indecomposables
+    
+    def compute_indecomposables_optimized(self, verbose=True):
+        """
+        Compute indecomposables using specialized algorithm if available.
+        
+        For real quadratic fields (degree 2), uses the Dress-Scharlau continued fraction
+        method which is much faster than the general brute force approach.
+        
+        For other fields, falls back to the general brute force method.
+        
+        Args:
+            verbose: Print progress information
+        
+        Returns:
+            List of indecomposables (up to multiplication by totally positive units)
+        """
+        if self.K is None:
+            raise ValueError("Number field K must be set first")
+        
+        # Use Dress-Scharlau for real quadratic fields
+        if self.degree == 2 and HAS_RQ:
+            if verbose:
+                print("Using Dress-Scharlau method for real quadratic field")
+            
+            # Extract D from the quadratic field
+            # For a quadratic field defined by X^2 - D or similar
+            try:
+                # Try to create RealQuadraticField
+                poly = self.K.defining_polynomial()
+                if poly.degree() == 2:
+                    # For x^2 - D, coefficient of x^0 is -D
+                    D = -poly[0]
+                    if Integer(D).is_squarefree() and D > 0:
+                        rq = RQ(D, precision=self.precision)
+                        self._indecomposables = rq.compute_indecomposables_dress_scharlau(verbose=verbose)
+                        return self._indecomposables
+            except Exception as e:
+                if verbose:
+                    print(f"Could not use Dress-Scharlau: {e}")
+                    print("Falling back to brute force method")
+        
+        # Fall back to general brute force
+        if verbose:
+            print("Using general brute force method")
+        return self.compute_indecomposables(verbose=verbose)
     
     def _find_totally_positive_generator(self, gen, unit_reps):
         """Find a totally positive generator by multiplying by units."""

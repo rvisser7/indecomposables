@@ -1,7 +1,14 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+# Workflow to build, test, and lint the indecomposables project
+#
+# This workflow:
+# 1. Lints Python code with flake8
+# 2. Runs minimal fast tests (syntax/imports)
+# 3. Runs full test suite with Sage (in Docker)
+#
+# For more information see:
+# https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Python application
+name: Tests and Linting
 
 on:
   push:
@@ -13,27 +20,110 @@ permissions:
   contents: read
 
 jobs:
-  build:
-
+  # Job 1: Linting and basic syntax checks
+  lint:
+    name: Lint and Syntax Check
     runs-on: ubuntu-latest
-
+    
     steps:
     - uses: actions/checkout@v4
+    
     - name: Set up Python 3.10
       uses: actions/setup-python@v3
       with:
         python-version: "3.10"
-    - name: Install dependencies
+    
+    - name: Install linting tools
       run: |
         python -m pip install --upgrade pip
         pip install flake8 pytest
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    - name: Lint with flake8
+    
+    - name: Lint with flake8 - stop on critical errors
       run: |
         # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Test with pytest
+        flake8 scripts/ --count --select=E9,F63,F7,F82 --show-source --statistics
+    
+    - name: Lint with flake8 - all warnings
       run: |
-        pytest
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 scripts/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+    
+    - name: Check Python syntax
+      run: |
+        python -m py_compile scripts/main.py
+        python -m py_compile tests/test_main.py
+
+  # Job 2: Fast minimal tests (no Sage required)
+  test-minimal:
+    name: Minimal Tests (Fast)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+    
+    - name: Install test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov
+    
+    - name: Run minimal tests (syntax and imports only)
+      run: |
+        python -m pytest tests/test_main.py::TestMinimal -v
+
+  # Job 3: Full tests with Sage
+  test-sage:
+    name: Full Tests with Sage
+    runs-on: ubuntu-latest
+    
+    # Use Ubuntu's apt repositories which have sagemath package
+    container:
+      image: ubuntu:22.04
+    
+    steps:
+    - name: Install system dependencies
+      run: |
+        apt-get update -qq
+        apt-get install -y sagemath python3-pytest python3-pytest-cov git
+    
+    - uses: actions/checkout@v4
+    
+    - name: Run full test suite
+      run: |
+        # Use Python from sage environment
+        mkdir -p /tmp/pytest_cache
+        python3 -m pytest tests/test_main.py -v --tb=short --color=yes --capture=no
+
+  # Job 4: Code coverage
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov
+    
+    - name: Generate coverage report (minimal tests only)
+      run: |
+        python -m pytest tests/test_main.py::TestMinimal --cov=scripts --cov-report=xml --cov-report=term
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
