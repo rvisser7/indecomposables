@@ -1,0 +1,21 @@
+{
+  "name": "Database of indecomposable elements",
+  "build": {
+      "dockerfile": "Dockerfile"
+  },
+  "postCreateCommand": "/bin/bash .devcontainer/setup.sh",
+  "customizations": {
+    "codespaces": {
+      "openFiles": ["README.md"]
+    },
+    "vscode": {
+      "extensions": [
+        "Lov3.sagemath-enhanced",
+        "ms-python.python"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "sage --python"
+      }
+    }
+  }
+}
