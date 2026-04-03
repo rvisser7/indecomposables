@@ -37,7 +37,7 @@ def load_fields(degree, data_dir):
 
             label, disc, poly_str = [x.strip() for x in line.split("|")]
 
-            R.<x> = QQ[]
+            R = QQ['x']; (x,) = R._first_ngens(1)
             f_poly = R(poly_str)
 
             K = NumberField(f_poly, 'a')
