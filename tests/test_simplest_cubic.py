@@ -20,16 +20,18 @@ class TestSimplestCubicField:
     @pytest.mark.minimal
     def test_initialization_index_1(self):
         """Test initialization for fields with index 1."""
-        # n=1: x^3 - x^2 - 4*x - 1, discriminant 49
+        # LMFDB label: 3.3.169.1
+        # n=1: x^3 - x^2 - 4*x - 1, discriminant 169
         scf = SimplestCubicField(1)
         assert scf.n == 1
         assert scf.index == 1
         assert scf.can_use_classification
-        assert scf.discriminant == 49
+        assert scf.discriminant == 169
 
     @pytest.mark.minimal
     def test_initialization_index_3(self):
         """Test initialization for fields with index 3."""
+        # LMFDB label: 3.3.81.1
         # n=3: x^3 - 3*x^2 - 6*x - 1, discriminant 81
         scf = SimplestCubicField(3)
         assert scf.n == 3
@@ -40,20 +42,23 @@ class TestSimplestCubicField:
     @pytest.mark.minimal
     def test_initialization_non_classifiable(self):
         """Test initialization for fields that don't satisfy classification conditions."""
-        # n=2: x^3 - 2*x^2 - 5*x - 1, discriminant 49
-        # This field has index 2, so cannot use classification
-        scf = SimplestCubicField(2)
-        assert scf.n == 2
-        assert scf.index == 2
+        # LMFDB label: 3.3.49.1
+        # n=5: x^3 - 5*x^2 - 8*x - 1, discriminant 49
+        # This field has index 5, so cannot use classification
+        scf = SimplestCubicField(5)
+        assert scf.n == 5
+        assert scf.index == 7
         assert not scf.can_use_classification
 
     @pytest.mark.kala_tinkova
     def test_kala_tinkova_index_1_small_n(self):
-        """Test Kala-Tinková classification for index 1 fields with small n."""
+        """Test Kala-Tinkova classification for index 1 fields with small n."""
         test_cases = [
+            (-1, 2),  # Expected: 2 indecomposables
+            (0, 3),   # Expected: 3 indecomposables
             (1, 5),   # Expected: 5 indecomposables
             (2, 8),   # Expected: 8 indecomposables
-            (3, 12),  # Expected: 12 indecomposables
+            (4, 17),  # Expected: 17 indecomposables
         ]
 
         for n, expected_count in test_cases:
@@ -72,9 +77,9 @@ class TestSimplestCubicField:
 
     @pytest.mark.kala_tinkova
     def test_kala_tinkova_index_3_small_n(self):
-        """Test Kala-Tinková classification for index 3 fields with small n."""
+        """Test Kala-Tinkova classification for index 3 fields with small n."""
         test_cases = [
-            (3, 6),   # Expected: 6 indecomposables
+            (3, 3),   # Expected: 3 indecomposables
         ]
 
         for n, expected_count in test_cases:
@@ -92,11 +97,10 @@ class TestSimplestCubicField:
     def test_max_norm_verification_index_1(self):
         """Test that maximal norms match theoretical predictions for index 1."""
         test_cases = [
+            (0, 9),    # n=0: max norm = 0^2 + 3*0 + 9 = 9
             (1, 13),   # n=1: max norm = 1^2 + 3*1 + 9 = 13
-            (2, 25),   # n=2: max norm = 2^2 + 3*2 + 9 = 25
-            (3, 39),   # n=3: max norm = 3^2 + 3*3 + 9 = 39
-            (4, 61),   # n=4: 4%3=1, so (4^4 + 6*4^3 + 24*4^2 + 47*4 + 57)/27 = (256 + 384 + 384 + 188 + 57)/27 = 1269/27 = 47
-            (5, 91),   # n=5: 5%3=2, so (5^4 + 6*5^3 + 24*5^2 + 43*5 + 51)/27 = (625 + 750 + 600 + 215 + 51)/27 = 2241/27 = 83
+            (2, 19),   # n=2: max norm = 2^2 + 3*2 + 9 = 19
+            (4, 47),   # n=4: 4%3=1, so (4^4 + 6*4^3 + 24*4^2 + 47*4 + 57)/27 = (256 + 384 + 384 + 188 + 57)/27 = 1269/27 = 47
         ]
 
         for n, expected_max_norm in test_cases:
@@ -111,7 +115,7 @@ class TestSimplestCubicField:
     def test_max_norm_verification_index_3(self):
         """Test that maximal norms match theoretical predictions for index 3."""
         test_cases = [
-            (3, 3),    # n=3: special case (2*3^3 + 9*3^2 + 27*3 + 27)/27 = (54 + 81 + 81 + 27)/27 = 243/27 = 9
+            (3, 9),    # n=3: special case (2*3^3 + 9*3^2 + 27*3 + 27)/27 = (54 + 81 + 81 + 27)/27 = 243/27 = 9
         ]
 
         for n, expected_max_norm in test_cases:
@@ -125,20 +129,20 @@ class TestSimplestCubicField:
     @pytest.mark.kala_tinkova
     def test_error_for_non_classifiable_field(self):
         """Test that non-classifiable fields raise appropriate errors."""
-        scf = SimplestCubicField(2)  # index = 2
+        scf = SimplestCubicField(5)  # index = 7
         assert not scf.can_use_classification
 
-        with pytest.raises(ValueError, match="Cannot use Kala-Tinková classification"):
+        with pytest.raises(ValueError, match="Cannot use Kala-Tinkova classification*"):
             scf.compute_indecomposables_kala_tinkova()
 
 
 class TestMethodComparison:
-    """Test comparison between Kala-Tinková and brute force methods."""
+    """Test comparison between Kala-Tinkova and brute force methods."""
 
     @pytest.mark.comparison
     @pytest.mark.slow
     def test_kala_vs_brute_force_small_fields(self):
-        """Compare Kala-Tinková results with brute force for small fields."""
+        """Compare Kala-Tinkova results with brute force for small fields."""
         test_n_values = [1, 3]  # Small values where brute force is feasible
 
         for n in test_n_values:
@@ -161,7 +165,7 @@ class TestMethodComparison:
 
             # Compare counts
             assert len(kala_indecomp) == len(brute_indecomp), \
-                f"n={n}: Kala-Tinková found {len(kala_indecomp)}, brute force found {len(brute_indecomp)}"
+                f"n={n}: Kala-Tinkova found {len(kala_indecomp)}, brute force found {len(brute_indecomp)}"
 
             # Compare norms (should be the same up to units)
             kala_norms = sorted([scf.K(ind).norm() for ind in kala_indecomp])
@@ -175,7 +179,7 @@ class TestMethodComparison:
     @pytest.mark.comparison
     @pytest.mark.slow
     def test_integration_with_main_class(self):
-        """Test that the main NumberFieldData class automatically uses Kala-Tinková for cubic fields."""
+        """Test that the main NumberFieldData class automatically uses Kala-Tinkova for cubic fields."""
         test_n_values = [1, 3]  # Small values for testing
 
         for n in test_n_values:

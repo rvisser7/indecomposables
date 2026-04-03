@@ -22,25 +22,10 @@ Algorithm:
 """
 
 # Try to import Sage modules - graceful degradation if not available
-try:
-    from sage.all import (
-        QuadraticField, RealField, log, Integer, ZZ, continued_fraction, 
-        cached_property, prod
-    )
-    SAGE_AVAILABLE = True
-except ImportError:
-    SAGE_AVAILABLE = False
-    # Mock Sage classes for graceful degradation
-    class MockSageObject:
-        def __init__(self, *args, **kwargs):
-            pass
-        def __call__(self, *args, **kwargs):
-            return self
-        def __getattr__(self, name):
-            return self
-    QuadraticField = RealField = log = Integer = ZZ = continued_fraction = MockSageObject()
-    cached_property = property  # Use regular property as fallback
-    prod = MockSageObject()
+from sage.all import (
+    QuadraticField, RealField, log, Integer, ZZ, continued_fraction, 
+    prod
+)
 
 
 class RealQuadraticField:
@@ -58,8 +43,11 @@ class RealQuadraticField:
             D: Squarefree positive integer (the discriminant or radicand)
             precision: Precision for RealField (in bits)
         """
+
         if not Integer(D).is_squarefree():
             raise ValueError(f"D = {D} must be squarefree")
+        if D < 2:
+            raise ValueError(f"D = {D} must be greater than 1")
         
         self.D = D
         self.precision = precision
@@ -84,7 +72,7 @@ class RealQuadraticField:
         self._indecomposables = None
         self._alpha_i = None
     
-    @cached_property
+    @property
     def fund_unit(self):
         """Get fundamental unit u > 1 of the field."""
         if self._fund_unit is not None:
@@ -105,7 +93,7 @@ class RealQuadraticField:
         self._fund_unit = u
         return u
     
-    @cached_property
+    @property
     def tp_unit(self):
         """Get generator for totally positive units."""
         if self._tp_unit is not None:
@@ -127,7 +115,7 @@ class RealQuadraticField:
         self._tp_unit = utp
         return utp
     
-    @cached_property
+    @property
     def cf_data(self):
         """
         Compute continued fraction data.
@@ -143,11 +131,11 @@ class RealQuadraticField:
         
         # Choose radicand based on D mod 4
         if self.D % 4 == 1:
-            # D ≡ 1 (mod 4): use (sqrt(D) - 1)/2 with delta = (sqrt(D) + 1)/2
+            # D equiv 1 (mod 4): use (sqrt(D) - 1)/2 with delta = (sqrt(D) + 1)/2
             cf = continued_fraction((self.a - 1) / 2)
             delta = (self.a + 1) / 2
         else:
-            # D ≡ 2, 3 (mod 4): use sqrt(D) with delta = sqrt(D)
+            # D equiv 2, 3 (mod 4): use sqrt(D) with delta = sqrt(D)
             cf = continued_fraction(self.a)
             delta = self.a
         
@@ -188,13 +176,13 @@ class RealQuadraticField:
             alpha = self.K(p_i + q_i * delta)
             alpha_i.append(alpha)
             
-            # Verify recurrence relation (for D ≤ 2000)
+            # Verify recurrence relation (for D at most 2000)
             if self.D <= 2000 and len(alpha_i) >= 3:
                 expected = cf[i] * alpha_i[-2] + alpha_i[-3]
                 assert alpha == expected, \
                     f"Recurrence failed at i={i}: {alpha} != {expected}"
             
-            # Verify specific unitarity conditions (for D ≤ 2000)
+            # Verify specific unitarity conditions (for D at most 2000)
             if self.D <= 2000 and i in [s - 1, 2 * s - 1]:
                 assert self.OK(alpha).is_unit(), \
                     f"alpha_{i} = {alpha} is not a unit"
@@ -297,6 +285,31 @@ class RealQuadraticField:
         
         return indecomposables_final
     
+    def compute_num_indecomposables(self):
+        """
+        Computes just the number of indecomposables (modulo totally positive units) 
+        This can be done faster than simply computing explicitly the indecomposables themselves.
+        Uses the computation of M_D as given in the Blomer--Kala "On the Rank of Universal Quadratic Forms over Real Quadratic Fields" paper (page 16)
+        """
+
+        if (self.D%4==1): cf = continued_fraction((1 + self.a)/2)
+        else: cf = continued_fraction(self.a)
+
+        cp = cf.period()
+        s = cf.period_length()
+
+        # Compute the number of indecomposables! :)
+        ans = -1
+        if (s%2)==0:
+            ans = sum([cp[i] for i in range(0, s-1, 2)])
+        elif (D%4)==1:
+            ans = 2*cf[0] + sum([cp[i] for i in range(s-1)]) - 1
+        else:
+            ans = 2*cf[0] + sum([cp[i] for i in range(s-1)])
+
+        return ans
+
+
     def indecomposables(self):
         """Get list of indecomposables (computed on demand)."""
         if self._indecomposables is None:

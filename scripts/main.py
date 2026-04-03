@@ -406,17 +406,13 @@ class NumberFieldData:
         Returns:
             List of indecomposables (up to multiplication by totally positive units)
         
-        Raises:
-            ImportError: If Sage is not available
         """
-        if not SAGE_AVAILABLE:
-            raise ImportError("Sage is required for indecomposable computations")
             
         if self.K is None:
             raise ValueError("Number field K must be set first")
         
         # Use Dress-Scharlau for real quadratic fields
-        if self.degree == 2 and HAS_RQ:
+        if self.degree == 2:
             if verbose:
                 print("Using Dress-Scharlau method for real quadratic field")
             
@@ -437,8 +433,8 @@ class NumberFieldData:
                     print(f"Could not use Dress-Scharlau: {e}")
                     print("Falling back to brute force method")
         
-        # Use Kala-Tinková for simplest cubic fields
-        if self.degree == 3 and HAS_SCF:
+        # Use Kala-Tinkova for simplest cubic fields
+        if self.degree == 3:
             if verbose:
                 print("Checking if field is a simplest cubic field...")
             

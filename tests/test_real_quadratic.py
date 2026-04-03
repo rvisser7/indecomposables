@@ -30,14 +30,14 @@ class TestRealQuadraticFieldConstruction:
         assert rq.discriminant == 5
     
     def test_init_d_eq_1_mod_4(self):
-        """Test D ≡ 1 (mod 4)."""
+        """Test D congruent to 1 (mod 4)."""
         rq = RealQuadraticField(13)
         assert rq.D == 13
         assert rq.D % 4 == 1
         assert rq.discriminant == 13
     
     def test_init_d_eq_2_mod_4(self):
-        """Test D ≡ 2 (mod 4)."""
+        """Test D congruent to 2 (mod 4)."""
         rq = RealQuadraticField(2)
         assert rq.D == 2
         assert rq.D % 4 == 2

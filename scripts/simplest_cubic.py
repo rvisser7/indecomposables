@@ -17,32 +17,18 @@ Algorithm:
     Normalize up to multiplication by totally positive units
 """
 
-# Try to import Sage modules - graceful degradation if not available
-try:
-    from sage.all import (
-        NumberField, PolynomialRing, QQ, ZZ, Integer, cached_property
-    )
-    SAGE_AVAILABLE = True
-except ImportError:
-    SAGE_AVAILABLE = False
-    # Mock Sage classes for graceful degradation
-    class MockSageObject:
-        def __init__(self, *args, **kwargs):
-            pass
-        def __call__(self, *args, **kwargs):
-            return self
-        def __getattr__(self, name):
-            return self
-    NumberField = PolynomialRing = QQ = ZZ = Integer = MockSageObject()
-    cached_property = property  # Use regular property as fallback
-
+# Import Sage modules 
+from sage.all import (
+    NumberField, PolynomialRing, QQ, ZZ, Integer
+)
+   
 
 class SimplestCubicField:
     """
     Specialized class for computing indecomposables in simplest cubic fields.
 
     Simplest cubic fields have the form Q[x]/(x^3 - n*x^2 - (n+3)*x - 1).
-    This class implements the Kala-Tinková classification for fields where
+    This class implements the Kala-Tinkova classification for fields where
     Z[ρ] has index 1 or 3 in the maximal order.
     """
 
@@ -169,7 +155,7 @@ class SimplestCubicField:
 
     def compute_indecomposables_kala_tinkova(self, verbose=True):
         """
-        Compute indecomposables using Kala-Tinková classification.
+        Compute indecomposables using Kala-Tinkova classification.
 
         This is much faster than brute force for simplest cubic fields where
         Z[ρ] has index 1 or 3 in the maximal order.
@@ -184,7 +170,7 @@ class SimplestCubicField:
             ValueError: If the field doesn't satisfy the classification conditions
         """
         if not self.can_use_classification:
-            raise ValueError(f"Cannot use Kala-Tinková classification: Z[ρ] has index {self.index}, not 1 or 3")
+            raise ValueError(f"Cannot use Kala-Tinkova classification: Z[ρ] has index {self.index}, not 1 or 3")
 
         if self._indecomposables is not None:
             return self._indecomposables
@@ -297,7 +283,7 @@ class SimplestCubicField:
         n = self.n
 
         if self.index == 1:
-            # From Kala-Tinková
+            # From Kala-Tinkova
             if n <= 3:
                 expected = n**2 + 3*n + 9
             elif n % 3 == 0:
@@ -309,7 +295,7 @@ class SimplestCubicField:
             return max_norm == expected
 
         elif self.index == 3:
-            # From Gil-Muñoz-Tinková Proposition 6.4
+            # From Gil-Munoz-Tinkova Proposition 6.4
             if n in [3, 21, 30, 48]:
                 expected = (2*n**3 + 9*n**2 + 27*n + 27) // 27
             else:
