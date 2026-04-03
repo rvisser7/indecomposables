@@ -168,7 +168,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-
           ${{ runner.os }}-
@@ -176,7 +176,7 @@ jobs:
     - name: Install Python dependencies
       shell: bash -l {0}
       run: |
-        sage -pip install -r requirements-dev.txt
+        sage -pip install -r requirements.txt
 
     - name: Generate coverage report
       shell: bash -l {0}
