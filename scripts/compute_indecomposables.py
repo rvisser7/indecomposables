@@ -15,8 +15,8 @@ def parse_args():
     parser.add_argument("--disc-min", type=int, default=1)
     parser.add_argument("--disc-max", type=int, required=True)
 
-    parser.add_argument("--data-dir", type=str, default="../totally_real_fields")
-    parser.add_argument("--output", type=str, default="output.txt")
+    parser.add_argument("--data-dir", type=str, default="totally_real_fields")
+    parser.add_argument("--output", type=str, default="test_output.txt")
 
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--thread-id", type=int, default=0)
