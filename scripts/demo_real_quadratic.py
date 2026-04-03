@@ -7,9 +7,10 @@ This script shows:
 3. How to use RealQuadraticField directly
 """
 
-from sage.all import QuadraticField, time
+from sage.all import QuadraticField, ZZ
 import sys
 import os
+import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -42,9 +43,9 @@ def benchmark_dress_scharlau():
         print(f"  Class number: {rq.class_number}")
         
         # Time the computation
-        t0 = time()
+        t0 = time.time()
         indecomps = rq.compute_indecomposables_dress_scharlau(verbose=False)
-        elapsed = time() - t0
+        elapsed = time.time() - t0
         
         print(f"  Indecomposables found: {len(indecomps)}")
         if indecomps:
@@ -64,7 +65,7 @@ def compare_methods():
     print("COMPARISON: DRESS-SCHARLAU vs BRUTE FORCE")
     print("=" * 70)
     
-    test_cases = [5, 13]
+    test_cases = [D for D in range(2, 1000) if ZZ(D).is_squarefree()]
     
     for D in test_cases:
         print(f"\nQ(√{D}):")
@@ -73,9 +74,9 @@ def compare_methods():
         # Dress-Scharlau
         print("  Dress-Scharlau method...")
         rq = RealQuadraticField(D)
-        t0 = time()
+        t0 = time.time()
         ds_indecomps = rq.compute_indecomposables_dress_scharlau(verbose=False)
-        ds_time = time() - t0
+        ds_time = time.time() - t0
         ds_norms = sorted([rq.K(x).norm() for x in ds_indecomps])
         print(f"    Found {len(ds_indecomps)} indecomposables in {ds_time:.3f}s")
         print(f"    Norms: {ds_norms}")
@@ -84,27 +85,24 @@ def compare_methods():
         print("  Brute force method (may be slow)...")
         K = QuadraticField(D)
         nfd = NumberFieldData(field=K)
-        try:
-            t0 = time()
-            bf_indecomps = nfd.compute_indecomposables(verbose=False)
-            bf_time = time() - t0
-            bf_norms = sorted([K(x).norm() for x in bf_indecomps])
-            print(f"    Found {len(bf_indecomps)} indecomposables in {bf_time:.3f}s")
-            print(f"    Norms: {bf_norms}")
-            
-            # Compare
-            if ds_norms == bf_norms:
-                print(f"  ✓ MATCH: Both methods found same indecomposables")
-                if bf_time > 0:
-                    speedup = bf_time / ds_time
-                    print(f"  ✓ Speedup: {speedup:.1f}x faster with Dress-Scharlau")
-            else:
-                print(f"  ✗ MISMATCH: DS norms {ds_norms} vs BF norms {bf_norms}")
         
-        except Exception as e:
-            print(f"    Brute force failed: {e}")
-            print(f"  Dress-Scharlau succeeded, brute force did not")
-
+        t0 = time.time()
+        bf_indecomps = nfd.compute_indecomposables(verbose=False)
+        bf_time = time.time() - t0
+        bf_norms = sorted([K(x).norm() for x in bf_indecomps])
+        print(f"    Found {len(bf_indecomps)} indecomposables in {bf_time:.3f}s")
+        print(f"    Norms: {bf_norms}")
+            
+        # Compare
+        if ds_norms == bf_norms:
+            print(f"  ✓ MATCH: Both methods found same indecomposables")
+            if bf_time > 0:
+                speedup = bf_time / ds_time
+                print(f"  ✓ Speedup: {speedup:.1f}x faster with Dress-Scharlau")
+        else:
+            print(f"  ✗ MISMATCH: DS norms {ds_norms} vs BF norms {bf_norms}")
+            assert(False)
+        
 
 def use_optimized_method():
     """Demonstrate using the automatic optimization in NumberFieldData."""
@@ -122,9 +120,9 @@ def use_optimized_method():
     print("Calling compute_indecomposables_optimized()...")
     print("(Should automatically detect quadratic and use Dress-Scharlau)")
     
-    t0 = time()
+    t0 = time.time()
     indecomps = nfd.compute_indecomposables_optimized(verbose=True)
-    elapsed = time() - t0
+    elapsed = time.time() - t0
     
     print(f"\nResults:")
     print(f"  Found {len(indecomps)} indecomposables in {elapsed:.3f}s")

@@ -44,8 +44,8 @@ def demo_simplest_cubic_field(n, show_elements=False):
         print("Cannot use efficient classification for this field.")
         return
 
-    # Time the Kala-Tinková computation
-    print("\nComputing with Kala-Tinková classification...")
+    # Time the Kala-Tinkova computation
+    print("\nComputing with Kala-Tinkova classification...")
     start_time = time.time()
     kala_indecomp = scf.compute_indecomposables_kala_tinkova(verbose=False)
     kala_time = time.time() - start_time
@@ -69,7 +69,7 @@ def demo_simplest_cubic_field(n, show_elements=False):
             print("2d")
 
     # Compare with brute force for small n
-    if abs(n) <= 3:  # Only for small fields where brute force is feasible
+    if abs(n) <= 1000:  # Only for small fields where brute force is feasible
         print("\nComparing with brute force method...")
         nfd = NumberFieldData(field=K)
 
@@ -93,6 +93,7 @@ def demo_simplest_cubic_field(n, show_elements=False):
             print(".1f")
         else:
             print("WARNING: Methods produced different results!")
+            assert(False)
 
 
 def demo_automatic_detection():
@@ -159,13 +160,16 @@ def demo_performance_comparison():
 
 def main():
     """Run all demos."""
-    print("Simplest Cubic Fields - Kala-Tinková Classification Demo")
+    print("Simplest Cubic Fields - Kala-Tinkova Classification Demo")
     print("Computing additively indecomposable elements efficiently")
 
     # Demo individual fields
     demo_simplest_cubic_field(1, show_elements=True)
     demo_simplest_cubic_field(3, show_elements=True)
     demo_simplest_cubic_field(2)  # Non-classifiable
+
+    for n in range(1, 1000):
+        demo_simplest_cubic_field(n, show_elements=True)
 
     # Demo automatic detection
     demo_automatic_detection()

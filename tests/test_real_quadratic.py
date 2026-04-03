@@ -336,7 +336,7 @@ class TestRealQuadraticBigBruteForce:
     @pytest.mark.slow
     def test_real_quadratic_big_brute_force(self):
 
-        for D in range(2, 1000):
+        for D in range(2, 20):
             if Integer(D).is_squarefree():
                 rq = RealQuadraticField(D)
 
