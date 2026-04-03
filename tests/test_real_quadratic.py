@@ -125,7 +125,7 @@ class TestContinuedFraction:
         assert len(cf.period()) == s
     
     def test_cf_d_mod_4_eq_1(self, rq_13):
-        """Test CF for D ≡ 1 (mod 4)."""
+        """Test CF for D equiv 1 (mod 4)."""
         cf, delta, s = rq_13.cf_data
         assert s > 0
         # Period should be computed
@@ -161,6 +161,7 @@ class TestAlphaSequence:
         alpha = rq_5._compute_alpha_sequence()
         
         alpha_2s = alpha[2 * s - 1]
+        print("***", alpha)
         assert alpha_2s.norm() > 0
         assert alpha_2s.trace() > 0
 
@@ -188,7 +189,7 @@ class TestDressScharlau:
         """Test indecomposables are computed."""
         indecomp = rq_5.compute_indecomposables_dress_scharlau(verbose=False)
         assert indecomp is not None
-        assert len(indecomp) > 0
+        assert len(indecomp) == 1
     
     @pytest.mark.dress_scharlau
     def test_indecomposables_sorted(self, rq_5):
@@ -201,10 +202,9 @@ class TestDressScharlau:
     def test_indecomposables_max_norm_bound(self, rq_5):
         """Test max norm satisfies Dress-Scharlau bound."""
         indecomp = rq_5.compute_indecomposables_dress_scharlau(verbose=False)
-        if indecomp:
-            max_norm = rq_5.K(indecomp[-1]).norm()
-            bound = abs(rq_5.discriminant) / 4
-            assert max_norm <= bound, \
+        max_norm = rq_5.K(indecomp[-1]).norm()
+        bound = abs(rq_5.discriminant) / 4
+        assert max_norm <= bound, \
                 f"Max norm {max_norm} exceeds bound {bound}"
     
     @pytest.mark.dress_scharlau
@@ -212,27 +212,25 @@ class TestDressScharlau:
         """Test Q(sqrt(5)) indecomposables."""
         # Known: Q(sqrt(5)) has 1 indecomposable (the unit 1)
         indecomp = rq_5.compute_indecomposables_dress_scharlau(verbose=False)
-        assert len(indecomp) >= 1
+        assert len(indecomp) == 1
         assert indecomp[0].norm() == 1  # First should be unit
     
     @pytest.mark.dress_scharlau
     def test_indecomposables_q_sqrt_13(self, rq_13):
         """Test Q(sqrt(13)) indecomposables."""
         indecomp = rq_13.compute_indecomposables_dress_scharlau(verbose=False)
-        assert len(indecomp) >= 1
         # Should have multiple indecomposables
-        assert len(indecomp) > 1
+        assert len(indecomp) == 3
     
     @pytest.mark.dress_scharlau
     def test_indecomposables_q_sqrt_61(self, rq_61):
         """Test Q(sqrt(61)) indecomposables."""
         indecomp = rq_61.compute_indecomposables_dress_scharlau(verbose=False)
-        assert len(indecomp) > 0
+        assert len(indecomp) == 11
         # Verify max norm bound
-        if indecomp:
-            max_norm = rq_61.K(indecomp[-1]).norm()
-            bound = abs(rq_61.discriminant) / 4
-            assert max_norm <= bound
+        max_norm = rq_61.K(indecomp[-1]).norm()
+        bound = abs(rq_61.discriminant) / 4
+        assert max_norm <= bound
 
 
 class TestBruteForceBrute:
@@ -249,13 +247,9 @@ class TestBruteForceBrute:
     def test_brute_force_computed(self, rq_5_nfd):
         """Test brute force indecomposables are computed."""
         # This may be slow, so use small timeout
-        try:
-            indecomp = rq_5_nfd.compute_indecomposables(verbose=False)
-            assert indecomp is not None
-            assert len(indecomp) > 0
-        except Exception as e:
-            # Brute force might be slow or fail, that's OK for now
-            pass
+        indecomp = rq_5_nfd.compute_indecomposables(verbose=False)
+        assert indecomp is not None
+        assert len(indecomp) == 1
 
 
 class TestMethodComparison:
@@ -277,16 +271,13 @@ class TestMethodComparison:
         # Compute via brute force
         K = QuadraticField(5, names='a')
         nfd = NumberFieldData(label="2.2.5.1", field=K)
-        try:
-            bf_indecomp = nfd.compute_indecomposables(verbose=False)
-            bf_norms = sorted([K(x).norm() for x in bf_indecomp])
+        bf_indecomp = nfd.compute_indecomposables(verbose=False)
+        bf_norms = sorted([K(x).norm() for x in bf_indecomp])
             
-            # Norms should match (might be different representatives)
-            assert ds_norms == bf_norms, \
-                f"DS norms {ds_norms} != BF norms {bf_norms}"
-        except Exception:
-            # Brute force might fail, just skip comparison
-            pass
+        # Norms should match (might be different representatives)
+        assert ds_norms == bf_norms, \
+            f"DS norms {ds_norms} != BF norms {bf_norms}"
+        
     
     @pytest.mark.comparison
     @pytest.mark.slow
@@ -337,6 +328,32 @@ class TestIntegrationRealQuadratic:
             assert len(indecomp) > 0
             norms = [rq.K(x).norm() for x in indecomp]
             assert norms == sorted(norms)
+
+class TestRealQuadraticBigBruteForce:
+    """ Brute force indecomposables for many real quadratic fields! """
+
+    @pytest.mark.brute_force
+    @pytest.mark.slow
+    def test_real_quadratic_big_brute_force(self):
+
+        for D in range(2, 1000):
+            if Integer(D).is_squarefree():
+                rq = RealQuadraticField(D)
+
+                # Compute indecomposables via Dress-Scharlau
+                ds_indecomp = rq.compute_indecomposables_dress_scharlau(verbose=False)
+                ds_norms = sorted([rq.K(x).norm() for x in ds_indecomp])
+                assert len(ds_indecomp) > 0
+
+                # Comptue indecomposables via brute force
+                K = QuadraticField(D, names='a')
+                nfd = NumberFieldData(field=K)
+                bf_indecomp = nfd.compute_indecomposables(verbose=False)
+                bf_norms = sorted([K(x).norm() for x in bf_indecomp])
+                       
+                # Ensure set of all norms match up
+                assert ds_norms == bf_norms
+
 
 
 if __name__ == "__main__":

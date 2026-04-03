@@ -147,7 +147,7 @@ class RealQuadraticField:
         
         return (cf, delta, s)
     
-    def _compute_alpha_sequence(self):
+    def _compute_alpha_sequence(self, verbose=False):
         """
         Compute the sequence of alpha_i elements using convergents.
         

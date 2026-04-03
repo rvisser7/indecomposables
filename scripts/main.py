@@ -11,13 +11,12 @@ import itertools
 
 # Import RealQuadraticField
 from real_quadratic import RealQuadraticField as RQ
-
-# Import SimplestCubicField if available try:
+# Import SimplestCubicField
 from simplest_cubic import SimplestCubicField as SCF
 
 
 # At the moment, we're only really supporting totally real fields
-# Should we maybe call this class "TotallyRealField" instead??
+# Should we maybe call this class "TotallyRealField" or "TotallyRealFieldData" instead??
 class NumberFieldData:
     """
     Class for computing and storing indecomposable elements in totally real number fields.

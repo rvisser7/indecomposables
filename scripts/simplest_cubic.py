@@ -170,7 +170,7 @@ class SimplestCubicField:
             ValueError: If the field doesn't satisfy the classification conditions
         """
         if not self.can_use_classification:
-            raise ValueError(f"Cannot use Kala-Tinkova classification: Z[ρ] has index {self.index}, not 1 or 3")
+            raise ValueError(f"Cannot use Kala-Tinkova classification: Z[rho] has index {self.index}, not 1 or 3")
 
         if self._indecomposables is not None:
             return self._indecomposables
