@@ -3,9 +3,7 @@
 import argparse
 from sage.all import NumberField, QQ
 
-from indecomposables.field_context import build_field_context
-from indecomposables.indecomposable import find_indecomposables
-from indecomposables.io import format_output_row
+from main import NumberFieldData
 
 
 def parse_args():
@@ -17,7 +15,7 @@ def parse_args():
     parser.add_argument("--disc-min", type=int, default=1)
     parser.add_argument("--disc-max", type=int, required=True)
 
-    parser.add_argument("--data-dir", type=str, default="data/totally_real_fields")
+    parser.add_argument("--data-dir", type=str, default="../totally_real_fields")
     parser.add_argument("--output", type=str, default="output.txt")
 
     parser.add_argument("--threads", type=int, default=1)
@@ -30,24 +28,45 @@ def load_fields(degree, data_dir):
     fields = []
 
     with open(filename) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
+        lines = f.readlines()
+        
+    # Skip header if it exists
+    start_line = 0
+    if lines and 'lmfdb_index' in lines[0]:
+        start_line = 1
+        
+    for line in lines[start_line:]:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
 
-            label, disc, poly_str = [x.strip() for x in line.split("|")]
+        parts = [x.strip() for x in line.split("|")]
+        if len(parts) < 2:
+            continue
+            
+        lmfdb_index = parts[0]
+        coeffs_str = parts[1]
+        
+        # Parse coefficients: [a0, a1, ..., a_{d-1}] for x^d + a_{d-1}x^{d-1} + ... + a0
+        coeffs = [int(x.strip()) for x in coeffs_str.split(',')]
+        
+        # Build polynomial: x^degree + coeffs[degree-1]*x^{degree-1} + ... + coeffs[0]
+        R = QQ['x']; x = R.gen()
+        poly_coeffs = [coeffs[0]] + coeffs[1:] + [1]  # Add constant term, then middle coeffs, then leading 1
+        f_poly = R(poly_coeffs)
+        
+        K = NumberField(f_poly, 'a')
+        disc = K.discriminant()
+        
+        # Create label like "degree.degree.discriminant.index"
+        label = f"{degree}.{degree}.{abs(disc)}.{lmfdb_index}"
 
-            R = QQ['x']; (x,) = R._first_ngens(1)
-            f_poly = R(poly_str)
-
-            K = NumberField(f_poly, 'a')
-
-            fields.append({
-                "label": label,
-                "disc": int(disc),
-                "field": K,
-                "monogenic": True  # or store if known
-            })
+        fields.append({
+            "label": label,
+            "disc": disc,
+            "field": K,
+            "monogenic": True  # or parse from parts[2] if available
+        })
 
     return fields
 
@@ -72,12 +91,15 @@ def main():
             try:
                 K = row["field"]
 
-                context = build_field_context(K, row)
+                # Create NumberFieldData object
+                nfd = NumberFieldData(label=row["label"], field=K)
 
-                indecomps = find_indecomposables(context)
+                # Compute indecomposables
+                indecomps = nfd.compute_indecomposables(verbose=False)
 
-                line = format_output_row(context, indecomps)
-                f_out.write(line)
+                # Format output row
+                line = nfd.to_data_row()
+                f_out.write(line + "\n")
                 f_out.flush()
 
             except Exception as e:

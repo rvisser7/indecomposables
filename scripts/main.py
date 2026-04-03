@@ -236,7 +236,7 @@ class NumberFieldData:
             assert u.is_totally_positive()
         
         self._totally_positive_units = utp
-        self._tp_unit_index = 2**(d-1) // len(kernel_basis)
+        self._tp_unit_index = 2**(d-1 - len(kernel_basis))
     
     def _compute_unit_representatives(self):
         """Compute representatives of all unit classes modulo squares."""
