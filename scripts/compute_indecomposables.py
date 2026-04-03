@@ -21,6 +21,8 @@ def parse_args():
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--thread-id", type=int, default=0)
 
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+
     return parser.parse_args()
 
 def load_fields(degree, data_dir):
@@ -95,7 +97,7 @@ def main():
                 nfd = NumberFieldData(label=row["label"], field=K)
 
                 # Compute indecomposables
-                indecomps = nfd.compute_indecomposables(verbose=False)
+                indecomps = nfd.compute_indecomposables(verbose=args.verbose)
 
                 # Format output row
                 line = nfd.to_data_row()

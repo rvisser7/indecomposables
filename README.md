@@ -11,6 +11,63 @@ Sage code to enumerate all additively indecomposable elements (modulo totally po
 Any contributions to either the code or data are very welcome!
 
 
+## Usage
+
+After installing Sage (see Development section below), you can compute indecomposables for totally real number fields using the provided shell script.
+
+### Basic Usage
+
+Compute indecomposables for degree 3 fields with discriminants between 1 and 100:
+
+```bash
+./compute_indecomposables.sh 3 1 100
+```
+
+This will:
+- Process all degree 3 fields from `totally_real_fields/deg3.txt`
+- Filter fields with discriminants in the range [1, 100]
+- Output results to `results_deg3.txt`
+- Show basic progress information
+
+### With Verbose Output
+
+For detailed computation progress, enable verbose mode:
+
+```bash
+./compute_indecomposables.sh 3 1 100 1
+```
+
+Verbose mode shows:
+- Discriminant values for each field
+- Progress through norm checking (percentage complete)
+- When indecomposables are found
+- Total count of indecomposables per field
+
+### Parameters
+
+```
+./compute_indecomposables.sh DEGREE DISC_MIN DISC_MAX [VERBOSE]
+```
+
+- `DEGREE`: Degree of number fields to process (3, 4, 5, etc.)
+- `DISC_MIN`: Minimum discriminant value (default: 1)
+- `DISC_MAX`: Maximum discriminant value (required)
+- `VERBOSE`: Optional, set to `1` to enable verbose output
+
+### Examples
+
+```bash
+# Degree 4 fields, discriminants 1-500, quiet mode
+./compute_indecomposables.sh 4 1 500
+
+# Degree 5 fields, discriminants 100-1000, verbose mode
+./compute_indecomposables.sh 5 100 1000 1
+
+# Large discriminant range for degree 3
+./compute_indecomposables.sh 3 1 10000 1
+```
+
+
 ## Development
 
 ### Setup
