@@ -2,13 +2,14 @@
 
 import argparse
 from sage.all import NumberField, QQ
+from datetime import datetime
 
 from main import NumberFieldData
 
-
+# Use parser to parse arguments from the command line
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Compute indecomposables in totally real number fields"
+        description="Compute indecomposables and sails in totally real number fields"
     )
 
     parser.add_argument("--degree", type=int, required=True)
@@ -16,7 +17,7 @@ def parse_args():
     parser.add_argument("--disc-max", type=int, required=True)
 
     parser.add_argument("--data-dir", type=str, default="totally_real_fields")
-    parser.add_argument("--output", type=str, default="test_output.txt")
+    parser.add_argument("--output", type=str, default=None, help="Output file (default: auto-generated with timestamp)")
 
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--thread-id", type=int, default=0)
@@ -24,6 +25,11 @@ def parse_args():
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 
     return parser.parse_args()
+
+def default_output_filename(degree):
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d_%H%M%S")   # e.g. 0402_213456
+    return f"output_deg{degree}_{timestamp}.txt"
 
 def load_fields(degree, data_dir):
     filename = f"{data_dir}/deg{degree}.txt"
@@ -107,12 +113,11 @@ def process_fields_streaming(degree, data_dir, disc_min, disc_max, output_file, 
             
             # Build polynomial: x^degree + coeffs[degree-1]*x^{degree-1} + ... + coeffs[0]
             R = QQ['x']; x = R.gen()
-            poly_coeffs = [coeffs[0]] + coeffs[1:] + [1]  # Add constant term, then middle coeffs, then leading 1
-            f_poly = R(poly_coeffs)
+            f_poly = R(coeffs + [1])  # Add constant term, then middle coeffs, then leading 1
             
-            # Compute discriminant from polynomial (much faster than constructing NumberField)
-            disc = f_poly.discriminant()
-            abs_disc = abs(disc)
+            # Construct the NumberField and compute discriminant
+            K = NumberField(f_poly, 'a')
+            abs_disc = abs(K.discriminant())
             
             # If we've exceeded the max discriminant, stop processing (fields are ordered)
             if abs_disc > disc_max:
@@ -125,14 +130,11 @@ def process_fields_streaming(degree, data_dir, disc_min, disc_max, output_file, 
             # Skip based on threading
             if line_num % threads != thread_id:
                 continue
-
-            # Now construct the NumberField and compute indecomposables
-            K = NumberField(f_poly, 'a')
             
             # Create label like "degree.degree.discriminant.index"
             label = f"{degree}.{degree}.{abs_disc}.{lmfdb_index}"
 
-            print(f"=== {label} (disc={abs_disc}) ===")
+            print(f"=== Computing field label: {label} (disc = {abs_disc}) ===")
 
             try:
                 # Create NumberFieldData object
@@ -152,6 +154,10 @@ def process_fields_streaming(degree, data_dir, disc_min, disc_max, output_file, 
 
 def main():
     args = parse_args()
+
+    # Set output filename
+    if args.output is None:
+        args.output = default_output_filename(args.degree)
 
     # Use streaming approach for efficiency
     process_fields_streaming(

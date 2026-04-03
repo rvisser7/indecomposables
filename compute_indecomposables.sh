@@ -28,7 +28,6 @@ sage -python scripts/compute_indecomposables.py \
   --degree $DEGREE \
   --disc-min ${DISC_MIN:-1} \
   --disc-max $DISC_MAX \
-  --output results_deg${DEGREE}.txt \
   $VERBOSE_FLAG
 
 echo "Done!"
