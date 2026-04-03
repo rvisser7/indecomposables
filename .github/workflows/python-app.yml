@@ -124,9 +124,14 @@ jobs:
         export PYTHONPATH=/home/sage/sage/local/lib/python3.10/site-packages:$PYTHONPATH
         export PATH=/home/sage/sage:$PATH
 
-        # Run tests with Sage
+        # Verify Sage environment
+        sage --version
+        which sage
+
         cd /__w/indecomposables/indecomposables
-        python3 -m pytest tests/ -v --tb=short --color=yes -k "not slow" --maxfail=5
+
+        # Run tests through tox (uses sage -python internally)
+        tox -e tests -- -k "not slow" --maxfail=5
 
 # Job 4: Code coverage using conda (LMFDB-style)
   coverage:
