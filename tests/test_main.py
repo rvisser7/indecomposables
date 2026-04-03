@@ -8,26 +8,7 @@ These tests verify:
 4. Data I/O formatting
 """
 
-# Try to import pytest - graceful degradation if not available
-try:
-    import pytest
-    PYTEST_AVAILABLE = True
-except ImportError:
-    PYTEST_AVAILABLE = False
-    # Mock pytest for minimal functionality
-    class MockPytest:
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: lambda f: f
-        mark = type('mark', (), {'skipif': lambda cond, reason: lambda f: f})()
-    pytest = MockPytest()
-
-# Create conditional skip decorator
-def skipif_sage_not_available(f):
-    """Skip test if Sage is not available."""
-    if PYTEST_AVAILABLE:
-        return pytest.mark.skipif(not SAGE_AVAILABLE, reason="Sage not available")(f)
-    else:
-        return f  # Don't skip if pytest not available
+import pytest
 
 import sys
 import os
@@ -35,16 +16,8 @@ import os
 # Add scripts directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
-# Try to import Sage modules - graceful degradation if not available
-try:
-    from sage.all import QQ, PolynomialRing, NumberField, ZZ
-    SAGE_AVAILABLE = True
-except ImportError:
-    SAGE_AVAILABLE = False
-    # Mock Sage classes for minimal tests
-    class MockSageObject:
-        pass
-    QQ = PolynomialRing = NumberField = ZZ = MockSageObject
+# Import Sage modules 
+from sage.all import QQ, PolynomialRing, NumberField, ZZ
 
 from main import NumberFieldData, create_field_from_polynomial, process_degree_file
 
@@ -52,7 +25,6 @@ from main import NumberFieldData, create_field_from_polynomial, process_degree_f
 class TestNumberFieldDataConstruction:
     """Test NumberFieldData initialization and basic properties."""
     
-    @skipif_sage_not_available
     def test_init_with_label_only(self):
         """Test creating NumberFieldData with just a label."""
         nfd = NumberFieldData(label="3.3.49.1")
@@ -65,13 +37,13 @@ class TestNumberFieldDataConstruction:
         metadata = {
             'discriminant': 49,
             'regulator': 0.525,
-            'class_number': 4,
+            'class_number': 1,
             'degree': 3
         }
         nfd = NumberFieldData(label="3.3.49.1", metadata=metadata)
         assert nfd.discriminant == 49
         assert nfd.regulator == 0.525
-        assert nfd.class_number == 4
+        assert nfd.class_number == 1
         assert nfd.degree == 3
     
     def test_init_with_field(self):
@@ -86,6 +58,8 @@ class TestNumberFieldDataConstruction:
         assert nfd.K is not None
         assert nfd.degree == 2
         assert nfd.discriminant == 5
+        assert nfd.class_number == 1
+        assert abs(nfd.regulator - 0.48121182506) < 1e-6
 
 
 class TestNumberFieldProperties:
@@ -101,10 +75,10 @@ class TestNumberFieldProperties:
     
     @pytest.fixture
     def cubic_field(self):
-        """Fixture: Simplest cubic field Q(a) where a^3 = 2."""
+        """Fixture: Totally real cubic field Q(a) where a^3 - a^2 - 2a + 1 = 0."""
         R = PolynomialRing(QQ, 'x')
         x = R.gen()
-        K = QQ.extension(x**3 - 2, names='a')
+        K = QQ.extension(x**3 - x**2 - 2*x + 1, names='a')
         return NumberFieldData(label="3.3.49.1", field=K)
     
     def test_discriminant_quadratic(self, real_quadratic_field):
@@ -115,8 +89,7 @@ class TestNumberFieldProperties:
     def test_discriminant_cubic(self, cubic_field):
         """Test discriminant computation for cubic field."""
         disc = cubic_field.discriminant
-        assert disc == -108  # or 108 depending on Sage normalization
-        assert abs(disc) == 108
+        assert disc == 49
     
     def test_degree_quadratic(self, real_quadratic_field):
         """Test degree for quadratic field."""
@@ -136,8 +109,7 @@ class TestNumberFieldProperties:
     def test_class_number_quadratic(self, real_quadratic_field):
         """Test class number for quadratic field."""
         h = real_quadratic_field.class_number
-        assert h >= 1
-        assert isinstance(h, int)
+        assert h == 1
 
 
 class TestFundamentalUnits:
@@ -153,10 +125,10 @@ class TestFundamentalUnits:
     
     @pytest.fixture
     def cubic_field(self):
-        """Fixture: Simplest cubic field."""
+        """Fixture: Totally real cubic field Q(a) where a^3 - a^2 - 2a + 1 = 0."""
         R = PolynomialRing(QQ, 'x')
         x = R.gen()
-        K = QQ.extension(x**3 - 2, names='a')
+        K = QQ.extension(x**3 - x**2 - 2*x + 1, names='a')
         return NumberFieldData(label="3.3.49.1", field=K)
     
     def test_fundamental_units_quadratic(self, real_quadratic_field):
@@ -198,11 +170,12 @@ class TestTotallyPositiveUnits:
     
     @pytest.fixture
     def cubic_field(self):
-        """Fixture: Simplest cubic field."""
+        """Fixture: Totally real cubic field Q(a) where a^3 - a^2 - 2a + 1 = 0."""
         R = PolynomialRing(QQ, 'x')
         x = R.gen()
-        K = QQ.extension(x**3 - 2, names='a')
+        K = QQ.extension(x**3 - x**2 - 2*x + 1, names='a')
         return NumberFieldData(label="3.3.49.1", field=K)
+
     
     def test_tp_units_exist(self, real_quadratic_field):
         """Test that totally positive units are computed."""
@@ -397,14 +370,7 @@ class TestMinimal:
         # This test should pass whether Sage is available or not
         # It just checks that the import logic works
         assert isinstance(SAGE_AVAILABLE, bool)
-        
-        # Test graceful degradation flags
-        import main
-        assert hasattr(main, 'HAS_RQ')
-        assert hasattr(main, 'HAS_SCF')
-        assert isinstance(main.HAS_RQ, bool)
-        assert isinstance(main.HAS_SCF, bool)
-
+ 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

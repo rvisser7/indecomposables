@@ -1,53 +1,29 @@
 # Main Python file for computing indecomposables in totally real number fields
 
-# Try to import Sage modules - graceful degradation if not available
-try:
-    from sage.all import (
-        Set, ZZ, RR, pi, euler_phi, CyclotomicField, gap, RealField, sqrt, prod,
-        QQ, NumberField, PolynomialRing, latex, pari, cached_function, Permutation,
-        sign, Matrix, GF, log, proof, QuadraticField)
-    from sage.rings.number_field.bdd_height import bdd_norm_pr_ideal_gens
-    SAGE_AVAILABLE = True
-except ImportError:
-    SAGE_AVAILABLE = False
-    # Mock Sage classes for graceful degradation
-    class MockSageObject:
-        def __init__(self, *args, **kwargs):
-            pass
-        def __call__(self, *args, **kwargs):
-            return self
-        def __getattr__(self, name):
-            return self
-    Set = ZZ = RR = pi = euler_phi = CyclotomicField = gap = RealField = sqrt = prod = MockSageObject()
-    QQ = NumberField = PolynomialRing = latex = pari = cached_function = Permutation = MockSageObject()
-    sign = Matrix = GF = log = proof = QuadraticField = MockSageObject()
-    bdd_norm_pr_ideal_gens = MockSageObject()
-    cached_property = property  # Use regular property as fallback
+# Import Sage modules
+from sage.all import (
+    Set, ZZ, RR, pi, euler_phi, CyclotomicField, gap, RealField, sqrt, prod,
+    QQ, NumberField, PolynomialRing, latex, pari, cached_function, Permutation,
+    sign, Matrix, GF, log, proof, QuadraticField)
+
+from sage.rings.number_field.bdd_height import bdd_norm_pr_ideal_gens
 import itertools
 
-# Try to import RealQuadraticField if available (allow graceful degradation)
-try:
-    from real_quadratic import RealQuadraticField as RQ
-    HAS_RQ = True
-except ImportError:
-    HAS_RQ = False
-    RQ = None
+# Import RealQuadraticField
+from real_quadratic import RealQuadraticField as RQ
 
-# Try to import SimplestCubicField if available (allow graceful degradation)
-try:
-    from simplest_cubic import SimplestCubicField as SCF
-    HAS_SCF = True
-except ImportError:
-    HAS_SCF = False
-    SCF = None
+# Import SimplestCubicField if available try:
+from simplest_cubic import SimplestCubicField as SCF
 
 
+# At the moment, we're only really supporting totally real fields
+# Should we maybe call this class "TotallyRealField" instead??
 class NumberFieldData:
     """
     Class for computing and storing indecomposable elements in totally real number fields.
     
-    An element α in a number field K is totally positive if σ(α) > 0 for all real embeddings σ.
-    An element α ∈ O_K is indecomposable if it cannot be written as a sum of two other 
+    An element alpha in a number field K is totally positive if σ(α) > 0 for all real embeddings σ.
+    An element alpha in O_K is indecomposable if it cannot be written as a sum of two other 
     totally positive integral elements in O_K.
     
     This class uses the ideal bound brute force method (based on Kala-Yatsyna bound) to enumerate
@@ -62,13 +38,8 @@ class NumberFieldData:
             label: LMFDB label for the field (e.g., "3.3.49.1")
             field: A Sage NumberField object (if None, label must be provided)
             metadata: Dict with field metadata (discriminant, regulator, class_number, etc.)
-        
-        Raises:
-            ImportError: If Sage is not available and field computations are attempted
         """
-        if not SAGE_AVAILABLE and field is not None:
-            raise ImportError("Sage is required for field computations")
-            
+                    
         self.label = label
         self.K = field
         self.metadata = metadata or {}
