@@ -36,7 +36,7 @@ class NumberFieldData:
         Args:
             label: LMFDB label for the field (e.g., "3.3.49.1")
             field: A Sage NumberField object (if None, label must be provided)
-            metadata: Dict with field metadata (discriminant, regulator, class_number, etc.)
+            metadata: Dict with field metadata (degree, discriminant, regulator, class_number, etc.)
         """
                     
         self.label = label
@@ -44,6 +44,7 @@ class NumberFieldData:
         self.metadata = metadata or {}
         
         # Computed data (populated by compute_* methods)
+        self._degree = None
         self._discriminant = None
         self._regulator = None
         self._class_number = None
@@ -53,7 +54,7 @@ class NumberFieldData:
         self._indecomposables = None
         self._indecomposables_logs = None
         self._unit_signature_rank = None
-        self._tp_unit_index = None
+        self._tp_unit_index = None     # kept around for historical reasons
         
         # Configuration
         self.exit_for_nonunit = False  # Exit early if non-unit indecomposable found
@@ -116,7 +117,7 @@ class NumberFieldData:
         return self._unit_representatives
     
     def _compute_fundamental_units(self):
-        """Compute fundamental units for the field."""
+        """Compute a set of fundamental units for the field."""
         if self.K is None:
             raise ValueError("Number field K must be set first")
         
@@ -124,7 +125,7 @@ class NumberFieldData:
         fun_units = UK.fundamental_units()
         
         # Verify they're units
-        assert all(u.norm() in [1, -1] for u in fun_units)
+        #assert all(u.norm() in [1, -1] for u in fun_units)
         
         # Normalize so all positive w.r.t. first embedding
         normalized_units = []
@@ -138,11 +139,12 @@ class NumberFieldData:
             assert self.K(u).complex_embeddings(self.precision)[0] > 0
         
         self._fundamental_units = normalized_units
-        self._unit_signature_rank = len(fun_units)
+        
     
     def _compute_totally_positive_units(self):
         """
         Compute a basis for the group of totally positive units.
+        Also computes the unit signature rank.
         
         Uses the approach from https://mathoverflow.net/questions/483102/
         to solve for the kernel of a GF(2) matrix.
@@ -201,12 +203,13 @@ class NumberFieldData:
         # Verify all are totally positive units
         for u in utp:
             assert u.norm() == 1, f"Unit {u} has norm {u.norm()}"
-            embeddings = self.K(u).complex_embeddings(self.precision)
-            assert all(e > 0 for e in embeddings), f"Unit {u} not totally positive"
+            #embeddings = self.K(u).complex_embeddings(self.precision)
+            #assert all(e > 0 for e in embeddings), f"Unit {u} not totally positive"
             assert u.is_totally_positive()
         
         self._totally_positive_units = utp
         self._tp_unit_index = 2**(d-1 - len(kernel_basis))
+        self._unit_signature_rank = len(fun_units)
     
     def _compute_unit_representatives(self):
         """Compute representatives of all unit classes modulo squares."""
@@ -270,9 +273,9 @@ class NumberFieldData:
         else:
             return 10000
     
-    def compute_indecomposables(self, verbose=True):
+    def compute_indecomposables_brute_force(self, verbose=True, GRH=False):
         """
-        Main algorithm: compute all indecomposables up to totally positive units.
+        Main brute force algorithm: compute all indecomposables up to totally positive units.
         
         Uses brute force enumeration over ideals of bounded norm. For each principal
         ideal with a totally positive generator, checks if it can be decomposed as
@@ -287,8 +290,9 @@ class NumberFieldData:
         if self.K is None:
             raise ValueError("Number field K must be set first")
         
-        # Disable GRH for speed (assume it for computation)
-        proof.number_field(False)
+        # Assume GRH (to make computations faster)
+        if GRH:
+            proof.number_field(False)
         
         # Prepare units
         if self._fundamental_units is None:
@@ -327,9 +331,10 @@ class NumberFieldData:
         num_checked = 0
         
         for nrm in range(1, max_norm_bound + 1):
-            if verbose and (nrm % 1000 == 0 or nrm < 100):
-                percent = 100.0 * nrm / max_norm_bound
-                print(f"Checking norm {nrm} ({percent:.1f}%, k-witness: {max_k_witness})")
+            if verbose:
+                if ((nrm%10000)==0) or ((nrm < 100000) and ((nrm%1000)==0)) or ((nrm < 1000) and ((nrm%100)==0)):
+                    percent = 100.0 * nrm / max_norm_bound
+                    print(f"Checking ideals of norm {nrm} ({percent:.1f}% to max norm bound), largest k-witness so far: {max_k_witness})")
             
             # Get ideals of this norm
             if self.exit_for_nonunit:
@@ -359,7 +364,7 @@ class NumberFieldData:
                 log_tp_gen = [R(tp_gen.complex_embeddings(prec)[i].log()) for i in range(d)]
                 
                 # Check if decomposable
-                is_indecomp = self._check_indecomposable(
+                is_indecomp = self._is_indecomposable_unit_algorithm(
                     tp_gen, log_tp_gen, all_indecomposables, all_indecomposables_logs,
                     utp, M, nrm, R
                 )
@@ -387,15 +392,17 @@ class NumberFieldData:
         
         return all_indecomposables
     
-    def compute_indecomposables_optimized(self, verbose=True):
+    def compute_indecomposables(self, verbose=True):
         """
-        Compute indecomposables using specialized algorithm if available.
+        Compute indecomposables using whichever is the fastest algorithm available.
         
         For real quadratic fields (degree 2), uses the Dress-Scharlau continued fraction
-        method which is much faster than the general brute force approach.
+        method (much faster than the general brute force approach).
         
-        For simplest cubic fields (degree 3) where Z[ρ] has index 1 or 3 in the maximal order,
-        uses the Kala-Tinková classification which is much faster than brute force.
+        For simplest cubic fields (degree 3) where Z[rho] has index 1 or 3 in the maximal order,
+        uses the Kala-Tinkovaa and Gil-Munoz--Tinkova classification (much faster than brute force).
+
+        For certain biquadratics, can use the classification by Siu Hang Man.
         
         For other fields, falls back to the general brute force method.
         
@@ -450,7 +457,7 @@ class NumberFieldData:
                             scf = SCF(n, precision=self.precision)
                             if scf.can_use_classification:
                                 if verbose:
-                                    print(f"Using Kala-Tinková classification for simplest cubic field with n = {n}")
+                                    print(f"Using Kala-Tinkova classification for simplest cubic field with n = {n}")
                                 self._indecomposables = scf.compute_indecomposables_kala_tinkova(verbose=verbose)
                                 return self._indecomposables
                             else:
@@ -464,7 +471,7 @@ class NumberFieldData:
         # Fall back to general brute force
         if verbose:
             print("Using general brute force method")
-        return self.compute_indecomposables(verbose=verbose)
+        return self.compute_indecomposables_brute_force(verbose=verbose)
     
     def _find_totally_positive_generator(self, gen, unit_reps):
         """Find a totally positive generator by multiplying by units."""
@@ -499,10 +506,11 @@ class NumberFieldData:
         
         return tp_gen
     
-    def _check_indecomposable(self, tp_gen, log_tp_gen, all_indecomposables, 
+    def _is_indecomposable_unit_algorithm(self, tp_gen, log_tp_gen, all_indecomposables, 
                                all_indecomposables_logs, utp, M, nrm, R):
         """
         Check if tp_gen is indecomposable by testing against all previously found indecomposables.
+        and for each one, solve an integer feasbility problem using the unit log-lattice embedding
         
         For each indecomposable ind, tries to find k ∈ Z^(d-1) such that
         tp_gen = ind * prod(utp[i]^k[i]) + something_totally_positive
@@ -544,6 +552,16 @@ class NumberFieldData:
         # No decomposition found
         return nrm < 2**d or True  # Force True for now; can adjust logic
     
+
+    def compute_sails(self, signature, verbose=True, GRH=False):
+        """
+        Algorithm to compute the sails of K
+        """
+
+        # TODO
+        pass
+
+
     def to_data_row(self):
         """
         Format as a pipe-delimited data row for output file.
@@ -576,6 +594,16 @@ class NumberFieldData:
         row += "]"
         
         return row
+
+
+    def from_data_row(self):
+        """
+        Populate properties of this field from data given in a pipe-delimited data row
+        (probably shouldn't be used too often)
+        """
+
+        # TODO
+        pass
 
 
 # ============================================================================

@@ -3,6 +3,7 @@
 import argparse
 from sage.all import NumberField, QQ
 from datetime import datetime
+import time
 
 from main import NumberFieldData
 
@@ -134,6 +135,7 @@ def process_fields_streaming(degree, data_dir, disc_min, disc_max, output_file, 
             # Create label like "degree.degree.discriminant.index"
             label = f"{degree}.{degree}.{abs_disc}.{lmfdb_index}"
 
+            start_time = time.time()
             print(f"=== Computing field label: {label} (disc = {abs_disc}) ===")
 
             try:
@@ -147,6 +149,10 @@ def process_fields_streaming(degree, data_dir, disc_min, disc_max, output_file, 
                 line = nfd.to_data_row()
                 f_out.write(line + "\n")
                 f_out.flush()
+
+                end_time = time.time()
+                print("Time taken for field:", end_time-start_time, "sec")
+                print()
 
             except Exception as e:
                 print(f"Error for {label}: {e}")

@@ -191,9 +191,9 @@ class TestMethodComparison:
 
             # Test optimized method
             nfd = NumberFieldData(field=K)
-            optimized_indecomp = nfd.compute_indecomposables_optimized(verbose=False)
+            optimized_indecomp = nfd.compute_indecomposables(verbose=False)
 
-            # Test direct Kala-Tinková
+            # Test direct Kala-Tinkova
             scf = SimplestCubicField(n)
             if scf.can_use_classification:
                 kala_indecomp = scf.compute_indecomposables_kala_tinkova(verbose=False)
