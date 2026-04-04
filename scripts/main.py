@@ -209,10 +209,14 @@ class NumberFieldData:
         
         self._totally_positive_units = utp
         self._tp_unit_index = 2**(d-1 - len(kernel_basis))
-        self._unit_signature_rank = len(fun_units)
+        self._unit_signature_rank = len(kernel_basis)
     
     def _compute_unit_representatives(self):
-        """Compute representatives of all unit classes modulo squares."""
+        """
+        Compute representatives of the unit group U_K modulo squares of untis (U_K^2).
+        Returns a set of size 2^(r-1)
+        """
+
         d = self.degree
         fun_units = self.fundamental_units
         
@@ -252,9 +256,9 @@ class NumberFieldData:
         d = self.degree
         
         if d == 1:
-            return abs(disc)
+            return 1
         elif d == 2:
-            return abs(disc) // 4 + 10
+            return abs(disc) // 4 
         elif d == 3:
             if disc <= 1000:
                 return abs(disc)
@@ -424,21 +428,13 @@ class NumberFieldData:
             
             # Extract D from the quadratic field
             # For a quadratic field defined by X^2 - D or similar
-            try:
-                # Try to create RealQuadraticField
-                poly = self.K.defining_polynomial()
-                if poly.degree() == 2:
-                    # For x^2 - D, coefficient of x^0 is -D
-                    D = -poly[0]
-                    if Integer(D).is_squarefree() and D > 0:
-                        rq = RQ(D, precision=self.precision)
-                        self._indecomposables = rq.compute_indecomposables_dress_scharlau(verbose=verbose)
-                        return self._indecomposables
-            except Exception as e:
-                if verbose:
-                    print(f"Could not use Dress-Scharlau: {e}")
-                    print("Falling back to brute force method")
-        
+            # Try to create RealQuadraticField
+
+            D = self.discriminant.squarefree_part()
+            rq = RQ(D, precision=self.precision)
+            self._indecomposables = rq.compute_indecomposables_dress_scharlau(verbose=verbose)
+            return self._indecomposables
+                    
         # Use Kala-Tinkova for simplest cubic fields
         if self.degree == 3:
             if verbose:

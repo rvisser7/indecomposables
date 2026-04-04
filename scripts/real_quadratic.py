@@ -191,6 +191,10 @@ class RealQuadraticField:
                         f"alpha_{2*s-1} not totally positive"
         
         self._alpha_i = alpha_i
+
+        if verbose:
+            print("Computing convergents alpha sequence as:", alpha_i)
+
         return alpha_i
     
     def compute_indecomposables_dress_scharlau(self, verbose=True):
@@ -209,7 +213,7 @@ class RealQuadraticField:
             return self._indecomposables
         
         cf, delta, s = self.cf_data
-        alpha_i = self._compute_alpha_sequence()
+        alpha_i = self._compute_alpha_sequence(verbose=verbose)
         
         if verbose:
             print(f"Computing indecomposables for Q(sqrt({self.D}))")

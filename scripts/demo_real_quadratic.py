@@ -65,7 +65,7 @@ def compare_methods():
     print("COMPARISON: DRESS-SCHARLAU vs BRUTE FORCE")
     print("=" * 70)
     
-    test_cases = [D for D in range(2, 1000) if ZZ(D).is_squarefree()]
+    test_cases = [D for D in range(2, 10000) if ZZ(D).is_squarefree()]
     
     for D in test_cases:
         print(f"\nQ(√{D}):")
@@ -75,7 +75,7 @@ def compare_methods():
         print("  Dress-Scharlau method...")
         rq = RealQuadraticField(D)
         t0 = time.time()
-        ds_indecomps = rq.compute_indecomposables_dress_scharlau(verbose=False)
+        ds_indecomps = rq.compute_indecomposables_dress_scharlau(verbose=True)
         ds_time = time.time() - t0
         ds_norms = sorted([rq.K(x).norm() for x in ds_indecomps])
         print(f"    Found {len(ds_indecomps)} indecomposables in {ds_time:.3f}s")
@@ -87,7 +87,7 @@ def compare_methods():
         nfd = NumberFieldData(field=K)
         
         t0 = time.time()
-        bf_indecomps = nfd.compute_indecomposables(verbose=False)
+        bf_indecomps = nfd.compute_indecomposables_brute_force(verbose=True)
         bf_time = time.time() - t0
         bf_norms = sorted([K(x).norm() for x in bf_indecomps])
         print(f"    Found {len(bf_indecomps)} indecomposables in {bf_time:.3f}s")

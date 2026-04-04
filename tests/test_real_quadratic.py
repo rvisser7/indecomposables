@@ -152,16 +152,15 @@ class TestAlphaSequence:
         alpha = rq_5._compute_alpha_sequence()
         
         # alpha_{s-1} and alpha_{2s-1} should be units
-        assert rq_5.OK(alpha[s - 1]).is_unit()
-        assert rq_5.OK(alpha[2 * s - 1]).is_unit()
+        assert rq_5.OK(alpha[s]).is_unit()
+        assert rq_5.OK(alpha[2 * s]).is_unit()
     
     def test_alpha_2s_totally_positive(self, rq_5):
         """Test that alpha_{2s-1} is totally positive."""
         cf, delta, s = rq_5.cf_data
         alpha = rq_5._compute_alpha_sequence()
         
-        alpha_2s = alpha[2 * s - 1]
-        print("***", alpha)
+        alpha_2s = alpha[2 * s]
         assert alpha_2s.norm() > 0
         assert alpha_2s.trace() > 0
 
