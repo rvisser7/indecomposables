@@ -14,6 +14,8 @@ from real_quadratic import RealQuadraticField as RQ
 # Import SimplestCubicField
 from simplest_cubic import SimplestCubicField as SCF
 
+# Sage's .is_totally_positive() uses AA (algebraic real field), so should be safe to use
+# e.g. see: https://github.com/sagemath/sage/blob/31a24ce25741e1610aa90924ce637c018ee6d87d/src/sage/rings/number_field/number_field_element.pyx#L2139
 
 # At the moment, we're only really supporting totally real fields
 # Should we maybe call this class "TotallyRealField" or "TotallyRealFieldData" instead??
@@ -54,6 +56,9 @@ class NumberFieldData:
         self._indecomposables = None
         self._indecomposables_logs = None
         self._unit_signature_rank = None
+
+        # A dictionary which converts a signature into a unit contained in that signature (if it exists)
+        self._unit_in_signature = {}
         self._tp_unit_index = None     # kept around for historical reasons
         
         # Configuration
@@ -526,16 +531,13 @@ class NumberFieldData:
                                 [log_tp_gen[j] - log_ind[j] 
                                  for j in list(range(case)) + list(range(case+1, d))])
                 
-                try:
-                    sol = M_tmp.solve_right(V_right)
-                    for j in range(d-1):
-                        k_lower[j] = min(k_lower[j], sol[j][0].floor())
-                        k_upper[j] = max(k_upper[j], sol[j][0].ceil())
-                except (ZeroDivisionError, ValueError):
-                    pass
+                sol = M_tmp.solve_right(V_right)
+                for j in range(d-1):
+                    k_lower[j] = min(k_lower[j], sol[j][0].floor())
+                    k_upper[j] = max(k_upper[j], sol[j][0].ceil())
             
             # Check all possible k in bounded range
-            iter_ranges = [range(k_lower[j]-1, k_upper[j]+2) for j in range(d-1)]
+            iter_ranges = [range(k_lower[j]-0, k_upper[j]+1) for j in range(d-1)]
             for k in itertools.product(*iter_ranges):
                 ind_shifted = ind * prod([utp[i]**k[i] for i in range(d-1)])
                 diff = tp_gen - ind_shifted
