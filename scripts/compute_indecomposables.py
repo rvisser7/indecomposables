@@ -112,13 +112,9 @@ def process_fields_streaming(degree, data_dir, disc_min, disc_max, output_file, 
             # Parse coefficients: [a0, a1, ..., a_{d-1}] for x^d + a_{d-1}x^{d-1} + ... + a0
             coeffs = [int(x.strip()) for x in coeffs_str.split(',')]
             
-            # Build polynomial: x^degree + coeffs[degree-1]*x^{degree-1} + ... + coeffs[0]
-            R = QQ['x']; x = R.gen()
-            f_poly = R(coeffs + [1])  # Add constant term, then middle coeffs, then leading 1
-            
-            # Construct the NumberField and compute discriminant
-            K = NumberField(f_poly, 'a')
-            abs_disc = abs(K.discriminant())
+            # Construct the NumberFieldData and compute discriminant
+            nfd = NumberFieldData(coeffs+[1])
+            abs_disc = abs(nfd.discriminant)
             
             # If we've exceeded the max discriminant, stop processing (fields are ordered)
             if abs_disc > disc_max:
@@ -139,9 +135,6 @@ def process_fields_streaming(degree, data_dir, disc_min, disc_max, output_file, 
             print(f"=== Computing field label: {label} (disc = {abs_disc}) ===")
 
             try:
-                # Create NumberFieldData object
-                nfd = NumberFieldData(label=label, field=K)
-
                 # Compute indecomposables
                 indecomps = nfd.compute_indecomposables(verbose=verbose)
 

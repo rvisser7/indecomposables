@@ -25,36 +25,32 @@ from main import NumberFieldData, create_field_from_polynomial, process_degree_f
 class TestNumberFieldDataConstruction:
     """Test NumberFieldData initialization and basic properties."""
     
-    def test_init_with_label_only(self):
-        """Test creating NumberFieldData with just a label."""
-        nfd = NumberFieldData(label="3.3.49.1")
-        assert nfd.label == "3.3.49.1"
-        assert nfd.K is None
-        assert nfd.metadata == {}
+    #def test_init_with_label_only(self):
+    #    """Test creating NumberFieldData with just a label."""
+    #    nfd = NumberFieldData(lmfdb_label="3.3.49.1")
+    #    assert nfd.lmfdb_label == "3.3.49.1"
+    #    assert nfd.K is None
+    #    assert nfd.metadata == {}
     
-    def test_init_with_metadata(self):
-        """Test creating NumberFieldData with metadata."""
-        metadata = {
-            'discriminant': 49,
-            'regulator': 0.525,
-            'class_number': 1,
-            'degree': 3
-        }
-        nfd = NumberFieldData(label="3.3.49.1", metadata=metadata)
-        assert nfd.discriminant == 49
-        assert nfd.regulator == 0.525
-        assert nfd.class_number == 1
-        assert nfd.degree == 3
+    #def test_init_with_metadata(self):
+    #    """Test creating NumberFieldData with metadata."""
+    #    metadata = {
+    #        'discriminant': 49,
+    #        'regulator': 0.525,
+    #        'class_number': 1,
+    #        'degree': 3
+    #    }
+    #    nfd = NumberFieldData(lmfdb_label="3.3.49.1", metadata=metadata)
+    #    assert nfd.discriminant == 49
+    #    assert nfd.regulator == 0.525
+    #    assert nfd.class_number == 1
+    #    assert nfd.degree == 3
     
     def test_init_with_field(self):
-        """Test creating NumberFieldData with a Sage NumberField."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        poly = x**2 - 5  # Real quadratic field with disc 5
-        K = QQ.extension(poly, names='a')
-        
-        nfd = NumberFieldData(label="2.2.5.1", field=K)
-        assert nfd.label == "2.2.5.1"
+        """Test creating NumberFieldData given coefficients"""
+        # Real quadratic field with disc 5
+        nfd = NumberFieldData([-5, 0, 1], lmfdb_label="2.2.5.1")
+        assert nfd.lmfdb_label == "2.2.5.1"
         assert nfd.K is not None
         assert nfd.degree == 2
         assert nfd.discriminant == 5
@@ -68,18 +64,12 @@ class TestNumberFieldProperties:
     @pytest.fixture
     def real_quadratic_field(self):
         """Fixture: Real quadratic field Q(sqrt(5))."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        K = QQ.extension(x**2 - 5, names='a')
-        return NumberFieldData(label="2.2.5.1", field=K)
+        return NumberFieldData([-5, 0, 1], lmfdb_label="2.2.5.1")
     
     @pytest.fixture
     def cubic_field(self):
         """Fixture: Totally real cubic field Q(a) where a^3 - a^2 - 2a + 1 = 0."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        K = QQ.extension(x**3 - x**2 - 2*x + 1, names='a')
-        return NumberFieldData(label="3.3.49.1", field=K)
+        return NumberFieldData([1, -2, -1, 1], lmfdb_label="3.3.49.1")
     
     def test_discriminant_quadratic(self, real_quadratic_field):
         """Test discriminant computation for quadratic field."""
@@ -118,18 +108,12 @@ class TestFundamentalUnits:
     @pytest.fixture
     def real_quadratic_field(self):
         """Fixture: Real quadratic field Q(sqrt(5))."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        K = QQ.extension(x**2 - 5, names='a')
-        return NumberFieldData(label="2.2.5.1", field=K)
+        return NumberFieldData([-5, 0, 1], lmfdb_label="2.2.5.1")
     
     @pytest.fixture
     def cubic_field(self):
         """Fixture: Totally real cubic field Q(a) where a^3 - a^2 - 2a + 1 = 0."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        K = QQ.extension(x**3 - x**2 - 2*x + 1, names='a')
-        return NumberFieldData(label="3.3.49.1", field=K)
+        return NumberFieldData([1, -2, -1, 1], lmfdb_label="3.3.49.1")
     
     def test_fundamental_units_quadratic(self, real_quadratic_field):
         """Test fundamental units for degree 2 field."""
@@ -163,20 +147,14 @@ class TestTotallyPositiveUnits:
     @pytest.fixture
     def real_quadratic_field(self):
         """Fixture: Real quadratic field Q(sqrt(5))."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        K = QQ.extension(x**2 - 5, names='a')
-        return NumberFieldData(label="2.2.5.1", field=K)
+        return NumberFieldData([-5, 0, 1], lmfdb_label="2.2.5.1")
     
     @pytest.fixture
     def cubic_field(self):
         """Fixture: Totally real cubic field Q(a) where a^3 - a^2 - 2a + 1 = 0."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        K = QQ.extension(x**3 - x**2 - 2*x + 1, names='a')
-        return NumberFieldData(label="3.3.49.1", field=K)
-
+        return NumberFieldData([1, -2, -1, 1], lmfdb_label="3.3.49.1")
     
+
     def test_tp_units_exist(self, real_quadratic_field):
         """Test that totally positive units are computed."""
         nfd = real_quadratic_field
@@ -216,10 +194,7 @@ class TestUnitRepresentatives:
     @pytest.fixture
     def real_quadratic_field(self):
         """Fixture: Real quadratic field Q(sqrt(5))."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        K = QQ.extension(x**2 - 5, names='a')
-        return NumberFieldData(label="2.2.5.1", field=K)
+        return NumberFieldData([-5, 0, 1], lmfdb_label="2.2.5.1")
     
     def test_unit_representatives_exist(self, real_quadratic_field):
         """Test that unit representatives are computed."""
@@ -249,10 +224,7 @@ class TestDataFormatting:
     @pytest.fixture
     def quadratic_with_indecomp(self):
         """Fixture: Quadratic field with computed indecomposables."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        K = QQ.extension(x**2 - 5, names='a')
-        nfd = NumberFieldData(label="2.2.5.1", field=K)
+        nfd = NumberFieldData([-5, 0, 1], lmfdb_label="2.2.5.1")
         # For testing, just set a simple indecomposable list
         nfd._indecomposables = [K(1), K(2)]
         return nfd

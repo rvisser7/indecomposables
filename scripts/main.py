@@ -4,7 +4,7 @@
 from sage.all import (
     Set, ZZ, RR, pi, euler_phi, CyclotomicField, gap, RealField, sqrt, prod,
     QQ, NumberField, PolynomialRing, latex, pari, cached_function, Permutation,
-    sign, Matrix, GF, log, proof, QuadraticField)
+    sign, Matrix, GF, log, proof, QuadraticField, AA)
 
 from sage.rings.number_field.bdd_height import bdd_norm_pr_ideal_gens
 import itertools
@@ -14,6 +14,8 @@ from real_quadratic import RealQuadraticField as RQ
 # Import SimplestCubicField
 from simplest_cubic import SimplestCubicField as SCF
 
+ZZx = PolynomialRing(ZZ, names='x')
+
 # Sage's .is_totally_positive() uses AA (algebraic real field), so should be safe to use
 # e.g. see: https://github.com/sagemath/sage/blob/31a24ce25741e1610aa90924ce637c018ee6d87d/src/sage/rings/number_field/number_field_element.pyx#L2139
 
@@ -21,29 +23,32 @@ from simplest_cubic import SimplestCubicField as SCF
 # Should we maybe call this class "TotallyRealField" or "TotallyRealFieldData" instead??
 class NumberFieldData:
     """
-    Class for computing and storing indecomposable elements in totally real number fields.
+    Class for computing and storing indecomposable elements and sails in totally real number fields.
     
     An element alpha in a number field K is totally positive if σ(α) > 0 for all real embeddings σ.
     An element alpha in O_K is indecomposable if it cannot be written as a sum of two other 
-    totally positive integral elements in O_K.
-    
-    This class uses the ideal bound brute force method (based on Kala-Yatsyna bound) to enumerate
-    all indecomposables up to multiplication by totally positive units.
+    totally positive integral elements in O_K. 
     """
     
-    def __init__(self, label=None, field=None, metadata=None):
+    def __init__(self, coeffs, lmfdb_label=None, lmfdb_index=None, metadata=None):
         """
         Initialize NumberFieldData.
         
         Args:
-            label: LMFDB label for the field (e.g., "3.3.49.1")
-            field: A Sage NumberField object (if None, label must be provided)
+            lmfdb_label: LMFDB label for the field (e.g., "3.3.49.1")
+            lmfdb_index: Just the last part of the LMFDB label (i.e. "1")
+            coeffs:  Coefficients of a defining polynomial for the field
             metadata: Dict with field metadata (degree, discriminant, regulator, class_number, etc.)
         """
                     
-        self.label = label
-        self.K = field
+        self.lmfdb_label = lmfdb_label
+        self.lmfdb_index = lmfdb_index
+        self.coeffs = coeffs
         self.metadata = metadata or {}
+
+        # Construct the field
+        if self.coeffs is not None:
+            self.K = NumberField(ZZx(coeffs), names='a')
         
         # Computed data (populated by compute_* methods)
         self._degree = None
@@ -61,7 +66,7 @@ class NumberFieldData:
         self._unit_in_signature = {}
         self._tp_unit_index = None     # kept around for historical reasons
         
-        # Configuration
+        # Configuration (should ideally phase these out...)
         self.exit_for_nonunit = False  # Exit early if non-unit indecomposable found
         self.check_asserts = False     # Run expensive assertions
         self.max_norm_bound = None     # Override default norm bound
@@ -120,6 +125,14 @@ class NumberFieldData:
         if self._unit_representatives is None and self.K is not None:
             self._compute_unit_representatives()
         return self._unit_representatives
+
+
+    def _signature(self, x):
+        """ Computes the signature of an element x in this field K """
+
+        embeds = (self.K(x)).embeddings(AA)
+        return tuple([e.sign() for e in embeds])
+        
     
     def _compute_fundamental_units(self):
         """Compute a set of fundamental units for the field."""
@@ -208,8 +221,6 @@ class NumberFieldData:
         # Verify all are totally positive units
         for u in utp:
             assert u.norm() == 1, f"Unit {u} has norm {u.norm()}"
-            #embeddings = self.K(u).complex_embeddings(self.precision)
-            #assert all(e > 0 for e in embeddings), f"Unit {u} not totally positive"
             assert u.is_totally_positive()
         
         self._totally_positive_units = utp
@@ -282,13 +293,39 @@ class NumberFieldData:
         else:
             return 10000
     
-    def compute_indecomposables_brute_force(self, verbose=True, GRH=False):
+    def _ideal_gens_of_norm(self, n, algorithm="new"):
+        """
+        Returns generators for principal ideals of norm n
+
+        Here, if algorithm is "old", then uses the built-in K.ideals_of_bdd_norm
+        Otherwise, if algorithm is "new", then uses the Pavlo-suggested bdd_norm_pr_ideal_gens function
+        """
+
+        if algorithm=="old":
+            ans = []
+            idls = self._ideals_of_bdd_norm[n]
+            for I in idls:
+                gens = I.gens_reduced()
+                if len(gens) != 1:
+                    continue
+                ans.append(gens[0])
+            return ans
+
+        if algorithm=="new":
+            return bdd_norm_pr_ideal_gens(self.K, [n])
+    
+
+
+    def compute_indecomposables_brute_force(self, verbose=True, algorithm="new", GRH=False):
         """
         Main brute force algorithm: compute all indecomposables up to totally positive units.
         
         Uses brute force enumeration over ideals of bounded norm. For each principal
         ideal with a totally positive generator, checks if it can be decomposed as
         a sum of previously found indecomposables.
+
+        Uses the ideal bound brute force method (based on Kala-Yatsyna bound) to enumerate
+        all indecomposables up to multiplication by totally positive units.
         
         Args:
             verbose: Print progress information
@@ -296,6 +333,9 @@ class NumberFieldData:
         Returns:
             List of indecomposables, sorted by norm then trace
         """
+        if verbose:
+            print("Starting brute force indecomposables computation for field K")
+
         if self.K is None:
             raise ValueError("Number field K must be set first")
         
@@ -345,19 +385,10 @@ class NumberFieldData:
                     percent = 100.0 * nrm / max_norm_bound
                     print(f"Checking ideals of norm {nrm} ({percent:.1f}% to max norm bound), largest k-witness so far: {max_k_witness})")
             
-            # Get ideals of this norm
-            if self.exit_for_nonunit:
-                ideal_gens = bdd_norm_pr_ideal_gens(self.K, [nrm])
-                ideals_of_norm = [self.K.ideal(pp) for pp in ideal_gens.get(nrm, [])]
-            else:
-                ideals_of_norm = self.K.ideals_of_bdd_norm(max_norm_bound + 1)[nrm]
-            
-            for ideal in ideals_of_norm:
-                gens = ideal.gens_reduced()
-                if len(gens) != 1:
-                    continue
-                
-                gen = gens[0]
+            # Get ideal generators of this norm
+            ideal_gens_of_norm = self._ideal_gens_of_norm(nrm, algorithm=algorithm)
+                        
+            for gen in ideal_gens_of_norm:
                 num_checked += 1
                 
                 # Find totally positive generator
@@ -580,7 +611,7 @@ class NumberFieldData:
         max_norm = self.K(indecomp_list[-1]).norm() if indecomp_list else 1
         
         # Build row
-        row = f"{self.label}|"
+        row = f"{self.lmfdb_label}|"
         row += f"{self.discriminant}|"
         row += f"{self.regulator}|"
         row += f"{self.class_number}|"
