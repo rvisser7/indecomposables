@@ -31,42 +31,49 @@ This will:
 - Output results to `results_deg3.txt`
 - Show basic progress information
 
-### With Verbose Output
-
-For detailed computation progress, enable verbose mode:
-
-```bash
-./compute_indecomposables.sh 3 1 100 1
-```
-
-Verbose mode shows:
-- Discriminant values for each field
-- Progress through norm checking (percentage complete)
-- When indecomposables are found
-- Total count of indecomposables per field
-
-### Parameters
+### Command Syntax
 
 ```
-./compute_indecomposables.sh DEGREE DISC_MIN DISC_MAX [VERBOSE]
+./compute_indecomposables.sh DEGREE DISC_MIN DISC_MAX [options]
 ```
 
+**Required Arguments:**
 - `DEGREE`: Degree of number fields to process (3, 4, 5, etc.)
-- `DISC_MIN`: Minimum discriminant value (default: 1)
+- `DISC_MIN`: Minimum discriminant value
 - `DISC_MAX`: Maximum discriminant value (required)
-- `VERBOSE`: Optional, set to `1` to enable verbose output
+
+**Options:**
+- `-v, --verbose`: Enable verbose console output (shows detailed progress)
+- `-d, --debug`: Enable debug console logging
+- `--num-threads N`: Set total thread count for parallel processing (default: 1)
+- `--thread-id I`: Set thread ID for distributed computation (default: 0)
+- `-h, --help`: Show help message
 
 ### Examples
 
 ```bash
-# Degree 4 fields, discriminants 1-500, quiet mode
-./compute_indecomposables.sh 4 1 500
+# Degree 3 fields, discriminants 1-100, basic mode
+./compute_indecomposables.sh 3 1 100
 
-# Degree 5 fields, discriminants 100-1000, verbose mode
-./compute_indecomposables.sh 5 100 1000 1
+# Degree 4 fields, discriminants 1-500, with verbose output
+./compute_indecomposables.sh 4 1 500 --verbose
 
-# Large discriminant range for degree 3
-./compute_indecomposables.sh 3 1 10000 1
+# Large computation with multiple threads
+./compute_indecomposables.sh 5 1 10000 --num-threads 4
+
+# Distributed computation (process part of a larger range)
+./compute_indecomposables.sh 3 1 10000 --num-threads 4 --thread-id 0
+
+# With debug logging
+./compute_indecomposables.sh 3 1 100 --debug
+```
+
+### Parallel Processing
+
+The script supports distributed computation across multiple processes. Use `run_parallel.sh` to automatically split the work:
+
+```bash
+./run_parallel.sh DEGREE DISC_MIN DISC_MAX NUM_PROCESSES
 ```
 
 
