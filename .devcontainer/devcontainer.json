@@ -1,9 +1,12 @@
 {
-  "name": "Database of indecomposable elements",
+  "name": "indecomposables",
   "build": {
       "dockerfile": "Dockerfile"
   },
   "postCreateCommand": "/bin/bash .devcontainer/setup.sh",
+  "postAttachCommand": {
+    "server": "./compute_indecomposables.sh"
+  },
   "customizations": {
     "codespaces": {
       "openFiles": ["README.md"]
