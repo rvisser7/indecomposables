@@ -2,6 +2,10 @@
 
 This folder contains Sage/Python code for computing additively indecomposable elements in totally real number fields.
 
+## 📖 Documentation
+
+For a comprehensive reference of the `NumberFieldData` class including all methods, properties, and usage examples, see [DEVELOPMENT.md](DEVELOPMENT.md).
+
 ## Files
 
 ### `main.py`
