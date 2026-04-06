@@ -17,8 +17,8 @@ from simplest_cubic import SimplestCubicField as SCF
 from logging_utils import setup_logger
 
 logger = setup_logger(
-    log_file=args.log,
-    verbose=args.verbose
+    log_file=None,
+    verbose=False
 )
 
 ZZx = PolynomialRing(ZZ, names='x')
@@ -144,6 +144,8 @@ class NumberFieldData:
     
     def _compute_fundamental_units(self):
         """Compute a set of fundamental units for the field."""
+        logger.info("Computing set of fundamental units")
+
         if self.K is None:
             raise ValueError("Number field K must be set first")
         
@@ -242,6 +244,7 @@ class NumberFieldData:
         Compute representatives of the unit group U_K modulo squares of untis (U_K^2).
         Returns a set of size 2^(r-1)
         """
+        logger.info("Computing unit representatives...")
 
         d = self.degree
         fun_units = self.fundamental_units

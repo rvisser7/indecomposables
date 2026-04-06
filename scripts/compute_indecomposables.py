@@ -6,6 +6,7 @@ from datetime import datetime
 import time
 
 from main import NumberFieldData
+from logging_utils import setup_logger
 
 # Use parser to parse arguments from the command line
 def parse_args():
@@ -13,12 +14,16 @@ def parse_args():
         description="Compute indecomposables and sails in totally real number fields"
     )
 
+    # Parse degree and discriminant range from command line
     parser.add_argument("--degree", type=int, required=True)
     parser.add_argument("--disc-min", type=int, default=1)
     parser.add_argument("--disc-max", type=int, required=True)
 
+    # Parse directory where we get the input files
     parser.add_argument("--data-dir", type=str, default="totally_real_fields")
+    # Parse files to write output and logs to
     parser.add_argument("--output", type=str, default=None, help="Output file (default: auto-generated with timestamp)")
+    parser.add_argument("--log-file", type=str, default=None, help="Log file (default: auto-generated with degree/discriminant range and timestamp)")
 
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--thread-id", type=int, default=0)
@@ -27,10 +32,22 @@ def parse_args():
 
     return parser.parse_args()
 
-def default_output_filename(degree):
-    now = datetime.now()
-    timestamp = now.strftime("%Y%m%d_%H%M%S")   # e.g. 0402_213456
-    return f"output_deg{degree}_{timestamp}.txt"
+def _timestamp_string(now=None):
+    if now is None:
+        now = datetime.now()
+    return now.strftime("%Y%m%d_%H%M%S")
+
+
+def default_output_filename(degree, disc_min, disc_max, timestamp=None):
+    if timestamp is None:
+        timestamp = _timestamp_string()
+    return f"output_D={degree}_Discs={disc_min}_{disc_max}_{timestamp}.txt"
+
+
+def default_log_filename(degree, disc_min, disc_max, timestamp=None):
+    if timestamp is None:
+        timestamp = _timestamp_string()
+    return f"output_logs_D={degree}_Discs={disc_min}_{disc_max}_{timestamp}.txt"
 
 def load_fields(degree, data_dir):
     filename = f"{data_dir}/deg{degree}.txt"
@@ -153,10 +170,21 @@ def process_fields_streaming(degree, data_dir, disc_min, disc_max, output_file, 
 
 def main():
     args = parse_args()
+    timestamp = _timestamp_string()
 
     # Set output filename
     if args.output is None:
-        args.output = default_output_filename(args.degree)
+        args.output = default_output_filename(args.degree, args.disc_min, args.disc_max, timestamp=timestamp)
+
+    # Set log filename
+    if args.log_file is None:
+        args.log_file = default_log_filename(args.degree, args.disc_min, args.disc_max, timestamp=timestamp)
+
+    # Reconfigure shared logger used by NumberFieldData in main.py
+    setup_logger(log_file=args.log_file, verbose=args.verbose)
+
+    print(f"Output file: {args.output}")
+    print(f"Log file: {args.log_file}")
 
     # Use streaming approach for efficiency
     process_fields_streaming(
