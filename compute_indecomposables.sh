@@ -2,22 +2,73 @@
 
 set -e
 
-DEGREE=$1
-DISC_MIN=$2
-DISC_MAX=$3
-VERBOSE=$4
-NUM_THREADS=${5:-1}
-THREAD_ID=${6:-0}
-DEBUG=${7:-0}
+print_usage() {
+  echo "Usage: $0 DEGREE DISC_MIN DISC_MAX [options]"
+  echo ""
+  echo "Options:"
+  echo "  -v, --verbose          Enable verbose console output"
+  echo "  -d, --debug            Enable debug console logging"
+  echo "  --num-threads N        Set total thread count (default: 1)"
+  echo "  --thread-id I          Set thread id (default: 0)"
+  echo "  -h, --help             Show this help"
+}
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+  print_usage
+  exit 0
+fi
+
+DEGREE=${1:-}
+DISC_MIN=${2:-}
+DISC_MAX=${3:-}
+
+if [[ $# -ge 3 ]]; then
+  shift 3
+else
+  set --
+fi
+
+# Defaults for optional settings
+VERBOSE=0
+DEBUG=0
+NUM_THREADS=1
+THREAD_ID=0
 
 if [ -z "$DEGREE" ] || [ -z "$DISC_MAX" ]; then
-  echo "Usage: $0 DEGREE DISC_MIN DISC_MAX [VERBOSE] [NUM_THREADS] [THREAD_ID] [DEBUG]"
-  echo "VERBOSE: optional, set to 1 to enable verbose output"
-  echo "NUM_THREADS: optional, default 1"
-  echo "THREAD_ID: optional, default 0"
-  echo "DEBUG: optional, set to 1 to enable debug logs in console"
+  print_usage
   exit 1
 fi
+
+# Named options
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -v|--verbose)
+      VERBOSE=1
+      shift
+      ;;
+    -d|--debug)
+      DEBUG=1
+      shift
+      ;;
+    --num-threads)
+      NUM_THREADS="$2"
+      shift 2
+      ;;
+    --thread-id)
+      THREAD_ID="$2"
+      shift 2
+      ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      print_usage
+      exit 1
+      ;;
+  esac
+done
 
 echo "Running big indecomposable computation..."
 echo "Degree: $DEGREE"
