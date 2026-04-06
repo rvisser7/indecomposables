@@ -57,6 +57,7 @@ class NumberFieldData:
         self.metadata = metadata or {}
 
         # Construct the field
+        self.K = None
         if self.coeffs is not None:
             self.K = NumberField(ZZx(coeffs), names='a')
         
@@ -868,8 +869,8 @@ def create_field_from_polynomial(poly, var='a'):
         # Parse string polynomial (simple eval, consider using sage.calculus.calculus for safety)
         poly = eval(poly.replace('x', 'x'))
     
-    K = poly.parent().base_ring().extension(poly, names=var)
-    return NumberFieldData(field=K, metadata={'degree': K.degree()})
+    coeffs = list(poly)
+    return NumberFieldData(coeffs, metadata={'degree': poly.degree()})
 
 
 def process_degree_file(filename):
@@ -903,7 +904,8 @@ def process_degree_file(filename):
             
             # Create NumberFieldData
             nfd = NumberFieldData(
-                label=record.get('lmfdb_label'),
+                None,
+                lmfdb_label=record.get('lmfdb_label'),
                 metadata={
                     'discriminant': int(record.get('discriminant', 0)),
                     'regulator': float(record.get('regulator', 0.0)),
@@ -933,7 +935,7 @@ def batch_compute_indecomposables(fields, degree=3, verbose=True, output_file=No
     
     for i, field_data in enumerate(fields):
         if verbose:
-            print(f"\n[{i+1}/{len(fields)}] Processing {field_data.label}...")
+            print(f"\n[{i+1}/{len(fields)}] Processing {field_data.lmfdb_label}...")
         
         try:
             indecomp = field_data.compute_indecomposables(verbose=verbose)
@@ -974,7 +976,8 @@ if __name__ == "__main__":
     print(f"Degree: {K.degree()}")
     
     # Create NumberFieldData object
-    nfd = NumberFieldData(label="3.3.49.1", field=K)
+    coeffs = list(poly)
+    nfd = NumberFieldData(coeffs, lmfdb_label="3.3.49.1")
     
     # Compute indecomposables
     try:

@@ -225,8 +225,8 @@ class TestDataFormatting:
     def quadratic_with_indecomp(self):
         """Fixture: Quadratic field with computed indecomposables."""
         nfd = NumberFieldData([-5, 0, 1], lmfdb_label="2.2.5.1")
-        # For testing, just set a simple indecomposable list
-        nfd._indecomposables = [K(1), K(2)]
+        # Set a simple indecomposable list using the field's own elements
+        nfd._indecomposables = [nfd.K(1), nfd.K(2)]
         return nfd
     
     def test_to_data_row_format(self, quadratic_with_indecomp):
@@ -245,7 +245,7 @@ class TestDataFormatting:
         row = nfd.to_data_row()
         
         # Should contain label, discriminant, regulator, class_number, indecomposables
-        assert nfd.label in row
+        assert nfd.lmfdb_label in row
         assert "[" in row and "]" in row  # Indecomposables list
 
 
@@ -274,14 +274,10 @@ class TestIntegration:
     
     def test_full_workflow_quadratic(self):
         """Test complete workflow for quadratic field."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        K = QQ.extension(x**2 - 5, names='a')
-        
-        nfd = NumberFieldData(label="2.2.5.1", field=K)
+        nfd = NumberFieldData([-5, 0, 1], lmfdb_label="2.2.5.1")
         
         # Check all properties can be accessed
-        assert nfd.label == "2.2.5.1"
+        assert nfd.lmfdb_label == "2.2.5.1"
         assert nfd.degree == 2
         assert nfd.discriminant == 5
         assert nfd.regulator > 0
@@ -292,11 +288,7 @@ class TestIntegration:
     
     def test_configuration_options(self):
         """Test that configuration options can be set."""
-        R = PolynomialRing(QQ, 'x')
-        x = R.gen()
-        K = QQ.extension(x**2 - 5, names='a')
-        
-        nfd = NumberFieldData(field=K)
+        nfd = NumberFieldData([-5, 0, 1])
         nfd.exit_for_nonunit = True
         nfd.check_asserts = True
         nfd.precision = 200
@@ -315,8 +307,8 @@ class TestMinimal:
     
     def test_number_field_data_instantiation(self):
         """Test that NumberFieldData can be instantiated."""
-        nfd = NumberFieldData(label="test")
-        assert nfd.label == "test"
+        nfd = NumberFieldData(None, lmfdb_label="test")
+        assert nfd.lmfdb_label == "test"
     
     def test_import_main_module(self):
         """Test that main module imports without errors."""
