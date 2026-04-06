@@ -1,6 +1,6 @@
 import logging
 
-def setup_logger(name="indecomposables", log_file=None, verbose=False):
+def setup_logger(name="indecomposables", log_file=None, verbose=False, debug=False):
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 
@@ -16,7 +16,14 @@ def setup_logger(name="indecomposables", log_file=None, verbose=False):
 
     # Console handler
     ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO if verbose else logging.WARNING)
+    if debug:
+        console_level = logging.DEBUG
+    elif verbose:
+        console_level = logging.INFO
+    else:
+        console_level = logging.WARNING
+
+    ch.setLevel(console_level)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 

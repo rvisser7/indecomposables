@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument("--thread-id", type=int, default=0)
 
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging to console (file logging is always DEBUG)")
 
     return parser.parse_args()
 
@@ -181,10 +182,16 @@ def main():
         args.log_file = default_log_filename(args.degree, args.disc_min, args.disc_max, timestamp=timestamp)
 
     # Reconfigure shared logger used by NumberFieldData in main.py
-    setup_logger(log_file=args.log_file, verbose=args.verbose)
+    setup_logger(log_file=args.log_file, verbose=args.verbose, debug=args.debug)
 
     print(f"Output file: {args.output}")
     print(f"Log file: {args.log_file}")
+    if args.debug:
+        print("Console logging level: DEBUG")
+    elif args.verbose:
+        print("Console logging level: INFO")
+    else:
+        print("Console logging level: WARNING")
 
     # Use streaming approach for efficiency
     process_fields_streaming(
