@@ -351,6 +351,14 @@ class NumberFieldData:
 
         if self.K is None:
             raise ValueError("Number field K must be set first")
+
+        logger.info(
+            "Starting brute-force indecomposables search (label=%s, degree=%s, algorithm=%s, GRH=%s)",
+            self.lmfdb_label,
+            self.degree,
+            algorithm,
+            GRH,
+        )
         
         # Assume GRH (to make computations faster)
         if GRH:
@@ -372,6 +380,14 @@ class NumberFieldData:
         R = RealField(self.precision)
         
         max_norm_bound = self._compute_max_norm_bound()
+        logger.info(
+            "Brute-force parameters: discriminant=%s, max_norm_bound=%s, num_fun_units=%s, num_tp_units=%s, num_unit_reps=%s",
+            disc,
+            max_norm_bound,
+            len(self._fundamental_units) if self._fundamental_units is not None else 0,
+            len(utp),
+            len(unit_reps),
+        )
         if verbose:
             print(f"Discriminant: {disc}")
             print(f"Max norm bound for search: {max_norm_bound}")
@@ -391,6 +407,8 @@ class NumberFieldData:
         # Compute indecomposables by checking ideals of bounded norm
         max_k_witness = -1
         num_checked = 0
+        num_tp_checked = 0
+        num_indecomp_found = 0
         
         for nrm in range(1, max_norm_bound + 1):
             if verbose:
@@ -400,6 +418,12 @@ class NumberFieldData:
             
             # Get ideal generators of this norm
             ideal_gens_of_norm = self._ideal_gens_of_norm(nrm, algorithm=algorithm)
+            norm_total_gens = len(ideal_gens_of_norm)
+            norm_tp_gens = 0
+            norm_new_indecomp = 0
+
+            if norm_total_gens > 0:
+                logger.debug("Norm %s: found %s principal ideal generator(s)", nrm, norm_total_gens)
                         
             for gen in ideal_gens_of_norm:
                 num_checked += 1
@@ -408,6 +432,8 @@ class NumberFieldData:
                 tp_gen = self._find_totally_positive_generator(gen, unit_reps)
                 if tp_gen is None:
                     continue
+                norm_tp_gens += 1
+                num_tp_checked += 1
                 
                 # Adjust to minimize coefficients
                 tp_gen = self._normalize_totally_positive_gen(tp_gen, utp, M, nrm)
@@ -425,12 +451,33 @@ class NumberFieldData:
                 if is_indecomp:
                     all_indecomposables.append(tp_gen)
                     all_indecomposables_logs.append(log_tp_gen)
+                    norm_new_indecomp += 1
+                    num_indecomp_found += 1
+                    logger.info(
+                        "Found indecomposable (norm=%s, trace=%s, element=%s)",
+                        nrm,
+                        self.K(tp_gen).trace(),
+                        tp_gen,
+                    )
                     if verbose:
                         print(f"  Found indecomposable: {tp_gen} (norm {self.K(tp_gen).norm()})")
                     
                     if self.exit_for_nonunit and nrm > 1:
+                        logger.info(
+                            "Early exit triggered after finding non-unit indecomposable at norm %s",
+                            nrm,
+                        )
                         break
             
+            if norm_total_gens > 0 or norm_new_indecomp > 0:
+                logger.debug(
+                    "Norm %s summary: total_gens=%s, totally_positive=%s, new_indecomposables=%s",
+                    nrm,
+                    norm_total_gens,
+                    norm_tp_gens,
+                    norm_new_indecomp,
+                )
+
             if self.exit_for_nonunit and len(all_indecomposables) > 1:
                 break
         
@@ -439,6 +486,13 @@ class NumberFieldData:
         
         self._indecomposables = all_indecomposables
         self._indecomposables_logs = all_indecomposables_logs
+
+        logger.info(
+            "Brute-force search complete: checked_generators=%s, checked_totally_positive=%s, indecomposables_found=%s",
+            num_checked,
+            num_tp_checked,
+            num_indecomp_found,
+        )
         
         if verbose:
             print(f"\nTotal indecomposables found: {len(all_indecomposables)}")
@@ -562,6 +616,12 @@ class NumberFieldData:
         """
         d = self.degree
         prec = max(self.precision, 20 * len(str(max(abs(c) for c in tp_gen.minpoly().coefficients()))))
+        logger.debug(
+            "Checking indecomposability (norm=%s, known_indecomposables=%s, element=%s)",
+            nrm,
+            len(all_indecomposables),
+            tp_gen,
+        )
         
         for ind, log_ind in zip(all_indecomposables, all_indecomposables_logs):
             # Use Cramer's rule on various pairs of embeddings to bound k
@@ -574,11 +634,34 @@ class NumberFieldData:
                 V_right = Matrix(R, d-1, 1, 
                                 [log_tp_gen[j] - log_ind[j] 
                                  for j in list(range(case)) + list(range(case+1, d))])
-                
-                sol = M_tmp.solve_right(V_right)
+
+                try:
+                    sol = M_tmp.solve_right(V_right)
+                except (ZeroDivisionError, ValueError) as e:
+                    logger.warning(
+                        "solve_right failed while bounding k (norm=%s, case=%s, ind=%s, error=%s)",
+                        nrm,
+                        case,
+                        ind,
+                        e,
+                    )
+                    return False
+
                 for j in range(d-1):
                     k_lower[j] = min(k_lower[j], sol[j][0].floor())
                     k_upper[j] = max(k_upper[j], sol[j][0].ceil())
+
+            lattice_size = 1
+            for j in range(d-1):
+                lattice_size *= (k_upper[j] - k_lower[j] + 1)
+
+            logger.debug(
+                "Testing against ind=%s with k-bounds=%s..%s (search_space=%s)",
+                ind,
+                k_lower,
+                k_upper,
+                lattice_size,
+            )
             
             # Check all possible k in bounded range
             iter_ranges = [range(k_lower[j]-0, k_upper[j]+1) for j in range(d-1)]
@@ -589,9 +672,22 @@ class NumberFieldData:
                 embeddings = self.K(diff).complex_embeddings(prec)
                 if all(e > 0 for e in embeddings):
                     # Found decomposition
+                    logger.debug(
+                        "Decomposition witness found (norm=%s, tp_gen=%s, ind=%s, k=%s, diff=%s)",
+                        nrm,
+                        tp_gen,
+                        ind,
+                        k,
+                        diff,
+                    )
                     return False
         
         # No decomposition found
+        logger.debug(
+            "No decomposition witness found (norm=%s, element=%s); marking indecomposable",
+            nrm,
+            tp_gen,
+        )
         return nrm < 2**d or True  # Force True for now; can adjust logic
     
 
