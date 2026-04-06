@@ -580,6 +580,105 @@ class NumberFieldData:
             if all(e > 0 for e in embeddings):
                 return tmp
         return None
+
+    def is_indecomposable_milp(self, x, eps=None, precision=None, require_integral=True, return_witness=False):
+        """
+        Check indecomposability of x via integer feasibility over an integral basis.
+
+        We test whether there exists y = sum_i k_i w_i (k_i in ZZ, w_i an integral basis)
+        such that for every real embedding sigma:
+
+            0 < sigma(y) < sigma(x)
+
+        If such y exists, then x is decomposable; otherwise, x is indecomposable.
+
+        Args:
+            x: Element of K to test.
+            eps: Positive tolerance replacing strict inequalities by >= eps and <= sigma(x)-eps.
+                 If None, uses 10^(-max(8, floor(precision/3))).
+            precision: Real precision used for numerical embeddings (default: self.precision).
+            require_integral: If True, enforce x in O_K and raise ValueError if not integral.
+            return_witness: If True, also return a witness y when decomposable.
+
+        Returns:
+            bool if return_witness=False:
+                True if indecomposable, False if decomposable.
+            tuple if return_witness=True:
+                (is_indecomposable, witness_or_None)
+        """
+        if self.K is None:
+            raise ValueError("Number field K must be set first")
+
+        from sage.numerical.mip import MixedIntegerLinearProgram, MIPSolverException
+
+        if precision is None:
+            precision = self.precision
+
+        if eps is None:
+            eps = 10 ** (-max(8, int(precision // 3)))
+
+        R = RealField(precision)
+        x = self.K(x)
+        OK = self.K.ring_of_integers()
+
+        if require_integral and x not in OK:
+            raise ValueError(f"x must be integral (x not in O_K): {x}")
+
+        # If x is not totally positive, there cannot exist y with 0 < sigma(y) < sigma(x) for all sigma.
+        x_embeds = [R(t) for t in x.complex_embeddings(precision)]
+        if not all(v > R(eps) for v in x_embeds):
+            logger.debug("MILP indecomposability check: x is not totally positive (x=%s)", x)
+            return (True, None) if return_witness else True
+
+        basis = [self.K(w) for w in OK.integral_basis()]
+        d = len(basis)
+
+        # Embedding matrix A where A[j][i] = sigma_j(w_i)
+        # and rhs vector b where b[j] = sigma_j(x).
+        A = [[R(basis[i].complex_embeddings(precision)[j]) for i in range(d)] for j in range(d)]
+        b = x_embeds
+
+        logger.debug(
+            "MILP indecomposability check start (x=%s, degree=%s, eps=%s, precision=%s)",
+            x,
+            d,
+            eps,
+            precision,
+        )
+
+        p = MixedIntegerLinearProgram(maximization=False)
+        k = p.new_variable(integer=True)
+
+        for j in range(d):
+            expr = sum(A[j][i] * k[i] for i in range(d))
+            lower = R(eps)
+            upper = b[j] - R(eps)
+            if upper < lower:
+                logger.debug(
+                    "MILP infeasible before solve at embedding %s: upper(%s) < lower(%s)",
+                    j,
+                    upper,
+                    lower,
+                )
+                return (True, None) if return_witness else True
+            p.add_constraint(expr, min=lower, max=upper)
+
+        p.set_objective(0)
+
+        try:
+            p.solve()
+            coeffs = [ZZ(round(p.get_values(k[i]))) for i in range(d)]
+            witness = sum(coeffs[i] * basis[i] for i in range(d))
+            logger.debug(
+                "MILP found decomposition witness for x=%s with coeffs=%s and y=%s",
+                x,
+                coeffs,
+                witness,
+            )
+            return (False, witness) if return_witness else False
+        except MIPSolverException:
+            logger.debug("MILP found no feasible y for x=%s; indecomposable", x)
+            return (True, None) if return_witness else True
     
     def _normalize_totally_positive_gen(self, tp_gen, utp, M, nrm):
         """
