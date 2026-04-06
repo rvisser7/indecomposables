@@ -1,5 +1,7 @@
 # Main Python file for computing indecomposables in totally real number fields
 
+# TODO:  Make sure we just use logger, and not printing stuff (avoid verbose)
+
 # Import Sage modules
 from sage.all import (
     Set, ZZ, RR, pi, euler_phi, CyclotomicField, gap, RealField, sqrt, prod,
@@ -32,7 +34,7 @@ class NumberFieldData:
     """
     Class for computing and storing indecomposable elements and sails in totally real number fields.
     
-    An element alpha in a number field K is totally positive if σ(α) > 0 for all real embeddings σ.
+    An element alpha in a number field K is totally positive if sigma(alpha) > 0 for all real embeddings sigma.
     An element alpha in O_K is indecomposable if it cannot be written as a sum of two other 
     totally positive integral elements in O_K. 
     """
@@ -47,7 +49,7 @@ class NumberFieldData:
             coeffs:  Coefficients of a defining polynomial for the field
             metadata: Dict with field metadata (degree, discriminant, regulator, class_number, etc.)
         """
-        logger.debug("Initialisaing new number field class")
+        logger.debug("Initializing new number field class")
                     
         self.lmfdb_label = lmfdb_label
         self.lmfdb_index = lmfdb_index
