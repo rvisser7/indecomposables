@@ -4,6 +4,7 @@ import argparse
 from sage.all import NumberField, QQ
 from datetime import datetime
 import time
+import os
 
 from main import NumberFieldData
 from logging_utils import setup_logger
@@ -48,7 +49,7 @@ def default_output_filename(degree, disc_min, disc_max, timestamp=None):
 def default_log_filename(degree, disc_min, disc_max, timestamp=None):
     if timestamp is None:
         timestamp = _timestamp_string()
-    return f"output_logs_D={degree}_Discs={disc_min}_{disc_max}_{timestamp}.txt"
+    return f"logs/output_logs_D={degree}_Discs={disc_min}_{disc_max}_{timestamp}.txt"
 
 def load_fields(degree, data_dir):
     filename = f"{data_dir}/deg{degree}.txt"
@@ -172,6 +173,11 @@ def process_fields_streaming(degree, data_dir, disc_min, disc_max, output_file, 
 def main():
     args = parse_args()
     timestamp = _timestamp_string()
+
+    # Create logs directory if it doesn't exist
+    log_dir = "logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
     # Set output filename
     if args.output is None:

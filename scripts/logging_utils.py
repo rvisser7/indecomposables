@@ -1,4 +1,5 @@
 import logging
+import os
 
 def setup_logger(name="indecomposables", log_file=None, verbose=False, debug=False):
     """
@@ -49,6 +50,11 @@ def setup_logger(name="indecomposables", log_file=None, verbose=False, debug=Fal
 
     # File handler
     if log_file:
+        # Create parent directories if they don't exist
+        log_dir = os.path.dirname(log_file)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        
         fh = logging.FileHandler(log_file)
         
         # Determine file level based on debug flag

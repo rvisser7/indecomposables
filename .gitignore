@@ -6,3 +6,5 @@ secret_key
 
 results*.txt
 output*.txt
+logs/*.txt
+logs/*.log
