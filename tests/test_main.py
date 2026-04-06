@@ -26,7 +26,7 @@ class TestNumberFieldDataConstruction:
     """Test NumberFieldData initialization and basic properties."""
     
     #def test_init_with_label_only(self):
-    #    """Test creating NumberFieldData with just a label."""
+    #    """Test creating NumberFieldData with just an LMFDB label."""
     #    nfd = NumberFieldData(lmfdb_label="3.3.49.1")
     #    assert nfd.lmfdb_label == "3.3.49.1"
     #    assert nfd.K is None

@@ -14,6 +14,13 @@ from real_quadratic import RealQuadraticField as RQ
 # Import SimplestCubicField
 from simplest_cubic import SimplestCubicField as SCF
 
+from logging_utils import setup_logger
+
+logger = setup_logger(
+    log_file=args.log,
+    verbose=args.verbose
+)
+
 ZZx = PolynomialRing(ZZ, names='x')
 
 # Sage's .is_totally_positive() uses AA (algebraic real field), so should be safe to use
@@ -40,6 +47,7 @@ class NumberFieldData:
             coeffs:  Coefficients of a defining polynomial for the field
             metadata: Dict with field metadata (degree, discriminant, regulator, class_number, etc.)
         """
+        logger.debug("Initialisaing new number field class")
                     
         self.lmfdb_label = lmfdb_label
         self.lmfdb_index = lmfdb_index
@@ -167,6 +175,8 @@ class NumberFieldData:
         Uses the approach from https://mathoverflow.net/questions/483102/
         to solve for the kernel of a GF(2) matrix.
         """
+        logger.debug("Computing totally positive units...")
+
         if self._fundamental_units is None:
             self._compute_fundamental_units()
         
