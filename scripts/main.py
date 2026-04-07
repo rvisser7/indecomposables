@@ -30,6 +30,8 @@ ZZx = PolynomialRing(ZZ, names='x')
 
 # At the moment, we're only really supporting totally real fields
 # Should we maybe call this class "TotallyRealField" or "TotallyRealFieldData" instead??
+# We should also agree on how best to initialise this class (should we accept coeffs, a Sage field K, lmfdb label/index...)
+# (perhaps check how Sage manages this..)
 class NumberFieldData:
     """
     Class for computing and storing indecomposable elements and sails in totally real number fields.
@@ -41,13 +43,13 @@ class NumberFieldData:
     
     def __init__(self, coeffs, lmfdb_label=None, lmfdb_index=None, metadata=None):
         """
-        Initialize NumberFieldData.
+        Initialize NumberFieldData class.
         
-        Args:
+        Possible args:
             lmfdb_label: LMFDB label for the field (e.g., "3.3.49.1")
             lmfdb_index: Just the last part of the LMFDB label (i.e. "1")
             coeffs:  Coefficients of a defining polynomial for the field
-            metadata: Dict with field metadata (degree, discriminant, regulator, class_number, etc.)
+            metadata: Dict with field metadata (degree, discriminant, regulator, class_number, etc.) (*do we need this???)
         """
         logger.debug("Initializing new number field class")
                     
