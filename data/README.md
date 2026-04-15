@@ -21,7 +21,8 @@ The schema for each file is as follows.  Some of the columns below are already p
 | num_indecomposables | numeric | the number of indecomposables, up to multiplication by totally positive units |
 | min_norm_indecomposable | numeric | the smallest norm of a non-unit indecomposable in K, if it exists.  Otherwise, this is -1. |
 | max_norm_indecomposable | numeric | the maximal norm of an indecomposable in K |
+| min_norm_decomposable | numeric | the smallest norm of a decomposable in O_K^+, which is not in mO_K^+ for some m >= 2 |
 | min_norm_all_signatures | numeric | the smallest positive integer k such that every signature has an element of norm at most k |
 | min_norm_fprimea_signature | numeric | the smallest norm of an element in the signature containing f'(a), where f is a defining polynomial for K |
 | indecomposables | numeric[] | a list of all indecomposables of K, up to multiplication by totally positive units |
-
+| indecomposables_norms | numeric[] | a list of all possible norms of indecomposables |
