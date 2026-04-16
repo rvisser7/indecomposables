@@ -31,6 +31,7 @@ ZZx = PolynomialRing(ZZ, names='x')
 # At the moment, we're only really supporting totally real fields
 # Should we maybe call this class "TotallyRealField" or "TotallyRealFieldData" instead??
 # We should also agree on how best to initialise this class (should we accept coeffs, a Sage field K, lmfdb label/index...)
+# Maybe we could accept both the option of "coeffs" and a field "K"
 # (perhaps check how Sage manages this..)
 class NumberFieldData:
     """

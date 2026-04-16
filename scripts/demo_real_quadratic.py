@@ -83,8 +83,8 @@ def compare_methods():
         
         # Brute force
         print("  Brute force method (may be slow)...")
-        K = QuadraticField(D)
-        nfd = NumberFieldData(field=K)
+        #K = QuadraticField(D)
+        nfd = NumberFieldData(coeffs=[D,0,1])
         
         t0 = time.time()
         bf_indecomps = nfd.compute_indecomposables_brute_force(verbose=True)
