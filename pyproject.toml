@@ -19,7 +19,7 @@ classifiers = [
 dependencies = ["pyyaml>=5.4"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-xdist", "pytest-timeout", "flake8"]
+dev = ["pytest>=7", "pytest-xdist", "pytest-timeout", "pytest-instafail", "flake8"]
 
 [project.scripts]
 indec-merge     = "scripts.merge_shards:main"
@@ -36,7 +36,12 @@ indecomposables = ["schema.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers -m 'not slow and not verification'"
+# -v          one line per test with its name, instead of a dot
+# --tb=short  a readable frame plus the assertion, not a full stack
+# -ra         end-of-run summary listing every failure, error and skip reason
+# -l          show local variables in the failing frame, which for these tests
+#             means the field and element that actually broke
+addopts = "--strict-markers -v --tb=short -ra -l -m 'not slow and not verification'"
 markers = [
     "sage: requires Sage",
     "slow: minutes per test",
