@@ -1,0 +1,148 @@
+"""
+Enumeration: bounds, candidate generation, and the full per-field computation.
+"""
+
+import pytest
+
+sage = pytest.importorskip("sage.all", reason="Sage not available")
+NumberField = sage.NumberField
+PolynomialRing = sage.PolynomialRing
+QQ, ZZ = sage.QQ, sage.ZZ
+
+pytestmark = pytest.mark.sage
+
+from indecomposables.context import FieldContext                    # noqa: E402
+from indecomposables.certify import is_indecomposable               # noqa: E402
+from indecomposables.enumeration import (                             # noqa: E402
+    all_signature_classes, candidates, indecomposables_exhaustive,
+    minimal_elements, t2_bound, trace_form,
+)
+
+R = PolynomialRing(QQ, "x")
+x = R.gen()
+
+FIELDS = {
+    "2.2.5.1": x ** 2 - x - 1,
+    "2.2.8.1": x ** 2 - 2,
+    "2.2.40.1": x ** 2 - 10,          # indecomposable norms {1, 6, 9, 10}
+    "3.3.49.1": x ** 3 - x ** 2 - 2 * x + 1,
+    "3.3.81.1": x ** 3 - 3 * x - 1,
+    "4.4.725.1": x ** 4 - x ** 3 - 3 * x ** 2 + x + 1,
+}
+
+
+@pytest.fixture(scope="session")
+def ctxs():
+    return {lab: FieldContext(NumberField(f, "a"), label=lab)
+            for lab, f in FIELDS.items()}
+
+
+@pytest.fixture(params=sorted(FIELDS))
+def ctx(request, ctxs):
+    return ctxs[request.param]
+
+
+def test_trace_form_is_positive_definite(ctx):
+    G = trace_form(ctx)
+    assert G.is_symmetric()
+    assert all(G[:k, :k].determinant() > 0 for k in range(1, ctx.degree + 1))
+
+
+def test_t2_bound_covers_every_result(ctx):
+    """
+    Nothing found may exceed the bound that was used to find it -- otherwise the
+    search truncated and the answer is incomplete.
+    """
+    B = t2_bound(ctx)
+    embs = ctx.real_embeddings()
+    for y, _ in indecomposables_exhaustive(ctx):
+        t2 = sum(embs[i](y) ** 2 for i in range(ctx.degree))
+        assert t2 <= B
+
+
+def test_candidates_respect_the_bound(ctx):
+    B = t2_bound(ctx)
+    embs = ctx.real_embeddings()
+    n = 0
+    for y in candidates(ctx, B):
+        assert sum(embs[i](y) ** 2 for i in range(ctx.degree)) <= B * 1.001
+        n += 1
+        if n > 500:
+            break
+    assert n > 0
+
+
+def test_everything_returned_is_indecomposable(ctx):
+    for y, _ in indecomposables_exhaustive(ctx):
+        assert y.is_totally_positive()
+        assert is_indecomposable(y, ctx)
+
+
+def test_one_is_present(ctx):
+    coords = {tuple(ctx.coordinates(y)) for y, _ in indecomposables_exhaustive(ctx)}
+    assert tuple(ctx.coordinates(ctx.K.one())) in coords
+
+
+def test_results_are_canonical_and_deduplicated(ctx):
+    out = [y for y, _ in indecomposables_exhaustive(ctx)]
+    coords = [tuple(ctx.coordinates(y)) for y in out]
+    assert len(coords) == len(set(coords))
+    for y in out:
+        assert ctx.normalizer.is_canonical(y)
+
+
+def test_norms_respect_kala_yatsyna(ctx):
+    disc = abs(ZZ(ctx.discriminant))
+    for y, _ in indecomposables_exhaustive(ctx):
+        assert abs(ZZ(y.norm())) <= disc
+
+
+def test_sail_is_a_subset(ctx):
+    """Sail points are always indecomposable; the converse fails for degree >= 3."""
+    out = indecomposables_exhaustive(ctx)
+    assert all(is_indecomposable(y, ctx) for y, on_sail in out if on_sail)
+    if ctx.degree == 2:
+        assert all(on_sail for _, on_sail in out)
+
+
+def test_signature_class_zero_is_totally_positive(ctx):
+    masks, sigs, results = all_signature_classes(ctx)
+    assert masks[0] == 0
+    assert sigs[0] == tuple([1] * ctx.degree)
+    tp = {tuple(ctx.coordinates(y)) for y, _, _ in results[0]}
+    assert tp == {tuple(ctx.coordinates(y)) for y, _ in indecomposables_exhaustive(ctx)}
+
+
+def test_signature_class_count_matches_unit_rank(ctx):
+    masks, sigs, results = all_signature_classes(ctx)
+    assert len(masks) == 2 ** (ctx.degree - ctx.unit_signature_rank)
+    assert len(results) == len(sigs)
+
+
+def test_elements_lie_in_their_declared_class(ctx):
+    masks, sigs, results = all_signature_classes(ctx)
+    embs = ctx.real_embeddings()
+    for sig, res in zip(sigs, results):
+        for y, _, _ in res:
+            got = tuple(1 if embs[i](y) > 0 else -1 for i in range(ctx.degree))
+            assert got == tuple(sig)
+
+
+@pytest.mark.parametrize("label,expected", [
+    ("2.2.5.1", {1}),
+    ("2.2.8.1", {1, 2}),
+    ("2.2.40.1", {1, 6, 9, 10}),
+])
+def test_known_quadratic_norms(label, expected, ctxs):
+    ctx = ctxs[label]
+    norms = {abs(ZZ(y.norm())) for y, _ in indecomposables_exhaustive(ctx)}
+    assert norms == expected
+
+
+@pytest.mark.slow
+def test_minimal_elements_bound_is_not_binding(ctx):
+    """Doubling the norm bound must not find anything new."""
+    base = {tuple(ctx.coordinates(y)) for y, _, _ in minimal_elements(ctx)}
+    wider = {tuple(ctx.coordinates(y))
+             for y, _, _ in minimal_elements(ctx, bound=2 * abs(ZZ(ctx.discriminant)))}
+    assert base == wider
