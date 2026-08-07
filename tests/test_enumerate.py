@@ -13,7 +13,7 @@ pytestmark = pytest.mark.sage
 
 from indecomposables.context import FieldContext                    # noqa: E402
 from indecomposables.certify import is_indecomposable               # noqa: E402
-from indecomposables.enumeration import (                             # noqa: E402
+from indecomposables.enumerate import (                             # noqa: E402
     all_signature_classes, candidates, indecomposables_exhaustive,
     minimal_elements, t2_bound, trace_form,
 )
