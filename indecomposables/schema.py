@@ -1,0 +1,364 @@
+"""
+The database schema, defined once.
+
+Everything downstream derives from ``COLUMNS``: the pipe-delimited row format,
+the psycodict header/type preamble, the parser, ``data/README.md``, and the
+split between the two files.  Nothing else in the codebase should hardcode a
+column name, a column order, or a Postgres type.
+
+Two files per degree, **one row per field in both**:
+
+* ``data/degree<n>_mini.txt`` -- scalars only, complete coverage
+* ``data/degree<n>.txt``      -- the same scalars plus every array column
+
+``degree<n>_mini.txt`` is generated from ``degree<n>.txt`` by column projection
+in ``scripts/merge_shards.py``, never computed separately, so the shared columns
+cannot drift.
+
+Per-signature results are stored as **arrays indexed by the ``signatures``
+column**, not as extra rows -- which is what keeps mini a clean projection.
+``signatures`` is ordered by :mod:`indecomposables.signatures`, so index 0 is
+always the totally positive class.
+
+Array types
+-----------
+Postgres array literals must be **rectangular**: ``{{1,2},{3,4,5}}` is not a
+valid ``numeric[]``.  Columns whose nesting is genuinely jagged -- a different
+number of minimal elements in each signature class, a different number of
+vertices on each facet -- are therefore ``jsonb``, encoded as JSON text.
+Rectangular columns stay as native arrays so they index and query normally.
+
+Elements are stored as **coefficient vectors with respect to the integral basis
+named in the ``basis`` column**, never as printed Sage expressions: printed forms
+depend on the variable name and the defining polynomial, need a Sage ``eval`` to
+read back, and are about twice the size.
+
+Where the schema lives
+----------------------
+The column *declarations* are data and live in ``schema.yaml``; the codecs are
+behaviour and live here, keyed by a small closed vocabulary of names.  Adding a
+column is then a data-only diff that a non-Python consumer -- a Magma script, an
+ingestion step, a front end -- can read directly, and a typo cannot break an
+import.  What that costs is the safety net of Python refusing to load a
+malformed file, which :func:`_validate` replaces with explicit checks at load
+time.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field as _field
+from pathlib import Path
+from typing import Any, Callable
+
+import yaml
+
+__all__ = [
+    "Column", "COLUMNS", "VERSION", "SCALAR_CODECS", "codec_for", "tier_for", "load", "MINI", "FULL", "STATUSES",
+    "columns", "header_lines", "encode_row", "decode_row", "project",
+    "docs_table", "create_table_sql", "NULL", "SEP", "SchemaError",
+]
+
+SEP = "|"
+NULL = r"\N"
+
+MINI = "mini"
+FULL = "full"
+
+#: Every field in scope gets a row; ``status`` says what happened to it.
+STATUSES = ("ok", "partial", "timeout", "error", "killed")
+
+
+class SchemaError(ValueError):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Codecs
+# ---------------------------------------------------------------------------
+
+def _enc_text(v):
+    s = str(v)
+    if SEP in s or "\n" in s:
+        raise SchemaError(f"text value contains a delimiter: {s!r}")
+    return s
+
+
+def _enc_int(v):
+    return str(int(v))
+
+
+def _enc_float(v):
+    return repr(float(v))
+
+
+def _nested_encode(v, depth):
+    if depth == 0:
+        return str(int(v))
+    return "{" + ",".join(_nested_encode(t, depth - 1) for t in v) + "}"
+
+
+def _split_braces(s):
+    if not (s.startswith("{") and s.endswith("}")):
+        raise SchemaError(f"not an array literal: {s!r}")
+    body, out, depth, cur = s[1:-1], [], 0, []
+    if not body:
+        return []
+    for ch in body:
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    out.append("".join(cur))
+    return out
+
+
+def _nested_decode(s, depth):
+    if depth == 0:
+        return int(s)
+    return tuple(_nested_decode(t, depth - 1) for t in _split_braces(s))
+
+
+def _array(depth):
+    """Codec for a rectangular Postgres array of integers, nested ``depth`` deep."""
+    return (lambda v: _nested_encode(v, depth), lambda s: _nested_decode(s, depth))
+
+
+def _to_tuples(o):
+    return tuple(_to_tuples(t) for t in o) if isinstance(o, (list, tuple)) else o
+
+
+JSON = (lambda v: _enc_text(json.dumps(v, separators=(",", ":"))),
+        lambda s: _to_tuples(json.loads(s)))
+
+TEXT = (_enc_text, str)
+INT = (_enc_int, int)
+FLOAT = (_enc_float, float)
+ARRAY1 = _array(1)
+ARRAY2 = _array(2)
+TEXT_ARRAY = (lambda v: "{" + ",".join(_enc_text(t) for t in v) + "}",
+              lambda s: tuple(_split_braces(s)))
+
+
+# ---------------------------------------------------------------------------
+# Columns
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Column:
+    name: str
+    pg_type: str
+    tier: str
+    doc: str                       # short_doc: the one-line description
+    codec: tuple = _field(repr=False)
+    nullable: bool = True
+    long_doc: str = None           # optional prose for data/README.md
+
+    @property
+    def encode(self) -> Callable[[Any], str]:
+        return self.codec[0]
+
+    @property
+    def decode(self) -> Callable[[str], Any]:
+        return self.codec[1]
+
+
+
+#: Postgres type -> codec.  Every integer type shares one codec: Postgres stores
+#: 1/0 for a smallint flag exactly as it stores 1/-1/0 for a tri-state, so a
+#: separate boolean codec would only add an ambiguity the type cannot resolve.
+SCALAR_CODECS = {
+    "text": TEXT,
+    "smallint": INT,
+    "integer": INT,
+    "bigint": INT,
+    "numeric": INT,
+    "double precision": FLOAT,
+    "real": FLOAT,
+    "jsonb": JSON,
+}
+
+SCHEMA_FILE = Path(__file__).with_name("schema.yaml")
+
+
+def codec_for(pg_type):
+    """
+    Derive the codec from the declared Postgres type.
+
+    Array dimension has to be written into the type -- Postgres calls both a 1-D
+    and a 2-D array ``numeric[]``, so the type alone would not say how deeply to
+    nest.  It accepts a multi-dimensional declaration and ignores the extra
+    dimensions, so ``numeric[][]`` is valid DDL and records what we need.
+    """
+    base, dims = pg_type, 0
+    while base.endswith("[]"):
+        base, dims = base[:-2].strip(), dims + 1
+    if dims == 0:
+        if base not in SCALAR_CODECS:
+            raise SchemaError(
+                f"unknown type {pg_type!r}; known types are "
+                f"{', '.join(sorted(SCALAR_CODECS))}, optionally with [] or [][]")
+        return SCALAR_CODECS[base]
+    if base not in SCALAR_CODECS or SCALAR_CODECS[base] is not INT:
+        raise SchemaError(f"{pg_type!r}: only integer arrays are supported; "
+                          "use jsonb for anything else")
+    if dims == 1:
+        return ARRAY1
+    if dims == 2:
+        return ARRAY2
+    raise SchemaError(f"{pg_type!r}: arrays deeper than two dimensions must be "
+                      "jsonb, since jagged nesting cannot be a Postgres array")
+
+
+def tier_for(pg_type):
+    """Arrays and jsonb live in the full file only; scalars live in both."""
+    return FULL if (pg_type.endswith("[]") or pg_type == "jsonb") else MINI
+
+
+def _validate(name, spec):
+    where = f"{SCHEMA_FILE.name}: column {name!r}"
+    if not isinstance(spec, dict):
+        raise SchemaError(f"{where}: expected a mapping of keys, got {type(spec).__name__}")
+    for key in ("type", "short_doc"):
+        if not spec.get(key):
+            raise SchemaError(f"{where}: missing required key {key!r}")
+    if spec.get("tier", MINI) not in (MINI, FULL):
+        raise SchemaError(f"{where}: tier must be {MINI!r} or {FULL!r}")
+    unknown = set(spec) - {"type", "tier", "short_doc", "long_doc"}
+    if unknown:
+        raise SchemaError(
+            f"{where}: unknown key(s) {sorted(unknown)}; "
+            "allowed keys are type, tier, short_doc, long_doc")
+
+
+def load(path=None):
+    """
+    Read the declarations.  Called once at import; re-callable for tests.
+
+    ``columns`` is a mapping, and its order is the column order in the data
+    files -- YAML mappings load in document order, and :func:`header_lines`
+    depends on that.
+    """
+    path = Path(path) if path else SCHEMA_FILE
+    with path.open() as fh:
+        doc = yaml.safe_load(fh)
+    if not isinstance(doc, dict) or not isinstance(doc.get("columns"), dict):
+        raise SchemaError(f"{path}: expected a mapping with a 'columns' mapping")
+
+    required = set(doc.get("required") or ())
+    cols = []
+    for name, spec in doc["columns"].items():
+        _validate(name, spec)
+        pg = str(spec["type"]).strip()
+        cols.append(Column(
+            name=name, pg_type=pg,
+            tier=spec.get("tier", tier_for(pg)),
+            doc=" ".join(str(spec["short_doc"]).split()),
+            long_doc=" ".join(str(spec.get("long_doc", "")).split()) or None,
+            codec=codec_for(pg),
+            nullable=name not in required))
+    if not cols:
+        raise SchemaError(f"{path}: no columns declared")
+    unknown = required - {c.name for c in cols}
+    if unknown:
+        raise SchemaError(f"{path}: 'required' names undeclared column(s) {sorted(unknown)}")
+    return int(doc.get("version", 0)), tuple(cols)
+
+
+#: Schema version, bumped on any change and recorded in ``data/manifest.json``.
+VERSION, COLUMNS = load()
+
+_BY_NAME = {c.name: c for c in COLUMNS}
+if len(_BY_NAME) != len(COLUMNS):
+    raise SchemaError("duplicate column name in COLUMNS")
+
+
+def columns(tier: str) -> tuple:
+    """Columns of a tier, in file order.  ``full`` is a superset of ``mini``."""
+    if tier == MINI:
+        return tuple(c for c in COLUMNS if c.tier == MINI)
+    if tier == FULL:
+        return COLUMNS
+    raise SchemaError(f"unknown tier {tier!r}")
+
+
+# ---------------------------------------------------------------------------
+# Rows and files
+# ---------------------------------------------------------------------------
+
+def header_lines(tier: str) -> list:
+    """psycodict preamble: names, Postgres types, blank line."""
+    cols = columns(tier)
+    return [SEP.join(c.name for c in cols),
+            SEP.join(c.pg_type for c in cols),
+            ""]
+
+
+def encode_row(record, tier: str) -> str:
+    out = []
+    for c in columns(tier):
+        v = record.get(c.name)
+        if v is None:
+            if not c.nullable:
+                raise SchemaError(f"column {c.name!r} may not be NULL")
+            out.append(NULL)
+        else:
+            out.append(c.encode(v))
+    return SEP.join(out)
+
+
+def decode_row(line: str, tier: str) -> dict:
+    cols = columns(tier)
+    parts = line.rstrip("\n\r").split(SEP)
+    if len(parts) != len(cols):
+        raise SchemaError(f"{tier} row has {len(parts)} fields, expected {len(cols)}")
+    rec = {}
+    for c, raw in zip(cols, parts):
+        if raw == NULL:
+            if not c.nullable:
+                raise SchemaError(f"column {c.name!r} may not be NULL")
+            rec[c.name] = None
+        else:
+            rec[c.name] = c.decode(raw)
+    return rec
+
+
+def project(line: str) -> str:
+    """
+    Turn one ``full`` line into the matching ``mini`` line.
+
+    This is how ``degree<n>_mini.txt`` is produced: by projection, never by a
+    second computation, so the shared columns cannot drift apart.
+    """
+    full = columns(FULL)
+    parts = line.rstrip("\n\r").split(SEP)
+    if len(parts) != len(full):
+        raise SchemaError(f"full row has {len(parts)} fields, expected {len(full)}")
+    keep = {c.name for c in columns(MINI)}
+    return SEP.join(p for c, p in zip(full, parts) if c.name in keep)
+
+
+def docs_table(tier: str) -> str:
+    """Markdown for ``data/README.md``.  Generated; never hand-edit."""
+    rows = ["| Column | Type | Description |", "| --- | --- | --- |"]
+    for c in columns(tier):
+        rows.append(f"| {c.name} | {c.pg_type} | {c.doc} |")
+    return "\n".join(rows)
+
+
+def create_table_sql(table: str, tier: str) -> str:
+    """``CREATE TABLE`` for psycodict."""
+    body = ",\n".join(f"    {c.name} {c.pg_type}" for c in columns(tier))
+    return f"CREATE TABLE {table} (\n{body}\n);"
+
+
+if __name__ == "__main__":
+    for tier in (MINI, FULL):
+        print(f"## `degree<n>{'_mini' if tier == MINI else ''}.txt`\n")
+        print(docs_table(tier))
+        print()
