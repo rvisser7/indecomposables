@@ -176,7 +176,7 @@ def _all_classes(ctx, verify):
     aborting the field: a row covering three of four classes is worth more than
     no row at all, and ``status = "partial"`` says exactly that.
     """
-    from .enumeration import minimal_elements
+    from .enumerate import minimal_elements
     from .signatures import field_signature_classes
 
     masks, sigs = field_signature_classes(ctx)
@@ -284,5 +284,5 @@ def _sail_walk(ctx):
 
 @register("brute_force", priority=0, complete=True)
 def _brute_force(ctx):
-    from .enumeration import indecomposables_exhaustive
+    from .enumerate import indecomposables_exhaustive
     return indecomposables_exhaustive
