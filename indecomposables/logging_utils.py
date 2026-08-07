@@ -1,70 +1,57 @@
+"""
+Logger setup.
+
+Deliberately *not* named ``logging.py``: a module of that name inside the
+package directory shadows the standard library for any tool run from there
+(flake8, pytest with rootdir on the path), which fails in confusing ways.
+
+Two changes from the original:
+
+* nothing is configured at import time.  ``main.py`` used to call
+  ``setup_logger()`` at module scope, so importing the library reconfigured
+  logging for whatever process imported it -- including pytest;
+* the library only ever calls ``logging.getLogger(__name__)``.  Handlers are
+  attached by the *application* (``run_parallel.py``, a script, a notebook),
+  which is the one place that knows where output should go.
+"""
+
+from __future__ import annotations
+
 import logging
 import os
 
-def setup_logger(name="indecomposables", log_file=None, verbose=False, debug=False):
+ROOT = "indecomposables"
+
+
+def get_logger(name=None):
+    """The logger a library module should use.  Attaches no handlers."""
+    return logging.getLogger(ROOT if name is None else f"{ROOT}.{name}")
+
+
+def setup_logging(log_file=None, verbose=False, debug=False):
     """
-    Set up a logger with separate formatters for console and file output.
-    
-    Args:
-        name: Logger name (default: "indecomposables")
-        log_file: Path to log file (if None, no file logging)
-        verbose: If True, output INFO level messages to stdout
-        debug: If True, output DEBUG level messages to log file
-    
-    Behavior:
-        - Console output (stdout):
-          * Default: WARNING and above (no timestamp/levelname, message only)
-          * With --verbose: INFO and above (message only)
-        - File output (if log_file provided):
-          * Default: INFO and above (with timestamp/levelname)
-          * With --debug: DEBUG and above (with timestamp/levelname)
+    Attach handlers.  Call once, from an application entry point.
+
+    Console gets WARNING (or INFO with ``verbose``) as bare messages; the file,
+    if given, gets INFO (or DEBUG) with timestamps.
     """
-    logger = logging.getLogger(name)
+    logger = logging.getLogger(ROOT)
     logger.setLevel(logging.DEBUG)
+    logger.handlers.clear()
 
-    # Avoid duplicate handlers (important in Sage / repeated runs)
-    if logger.hasHandlers():
-        logger.handlers.clear()
-
-    # Formatter for console: message only (no timestamp/levelname)
-    console_formatter = logging.Formatter("%(message)s")
-
-    # Formatter for file: include timestamp and levelname
-    file_formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(message)s",
-        datefmt="%H:%M:%S"
-    )
-
-    # Console handler
     ch = logging.StreamHandler()
-    
-    # Determine console level based on verbose flag
-    if verbose:
-        console_level = logging.INFO
-    else:
-        console_level = logging.WARNING
-
-    ch.setLevel(console_level)
-    ch.setFormatter(console_formatter)
+    ch.setLevel(logging.INFO if verbose else logging.WARNING)
+    ch.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(ch)
 
-    # File handler
     if log_file:
-        # Create parent directories if they don't exist
-        log_dir = os.path.dirname(log_file)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        
+        parent = os.path.dirname(log_file)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         fh = logging.FileHandler(log_file)
-        
-        # Determine file level based on debug flag
-        if debug:
-            file_level = logging.DEBUG
-        else:
-            file_level = logging.INFO
-        
-        fh.setLevel(file_level)
-        fh.setFormatter(file_formatter)
+        fh.setLevel(logging.DEBUG if debug else logging.INFO)
+        fh.setFormatter(logging.Formatter(
+            "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"))
         logger.addHandler(fh)
-
     return logger
