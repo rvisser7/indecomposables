@@ -50,9 +50,34 @@ def cubic():
     return FieldContext(NumberField(x ** 3 - x ** 2 - 2 * x + 1, "a"))
 
 
+def _coordinate_box(ctx, trace_max):
+    """
+    Coordinate range that provably covers every totally positive element of
+    trace at most ``trace_max``.
+
+    A hardcoded box is not safe: it depends on how skewed the integral basis is.
+    For Q(sqrt 10) with a +-8 box, every indecomposable of norm 10 -- including
+    10 + 3*sqrt(10), which sits exactly at the Dress-Scharlau bound disc/4 --
+    has first coordinate 10 and falls outside, so an entire norm class is
+    invisible while the test still looks like it passes.
+
+    If y is totally positive with Tr(y) <= T then 0 < sigma_j(y) < T for every
+    j, and the coordinate vector is a = v * M^-1 with v the embedding vector and
+    M the matrix of basis embeddings.  Hence |a_i| <= T * sum_j |M^-1[j][i]|.
+    """
+    n = ctx.degree
+    embs = ctx.real_embeddings()
+    M = sage.Matrix(sage.RDF, [[e(b) for e in embs] for b in ctx.basis])
+    Minv = M.inverse()
+    return [int(trace_max * sum(abs(Minv[j][i]) for j in range(n))) + 1
+            for i in range(n)]
+
+
 def _totally_positive_sample(ctx, trace_max=40):
+    """Every totally positive element of trace at most ``trace_max``."""
+    box = _coordinate_box(ctx, trace_max)
     out = []
-    for coeffs in sage.cartesian_product([range(-8, 9)] * ctx.degree):
+    for coeffs in sage.cartesian_product([range(-b, b + 1) for b in box]):
         y = ctx.from_coordinates(coeffs)
         if y.is_totally_positive() and ZZ(y.trace()) <= trace_max:
             out.append(y)
@@ -125,9 +150,11 @@ def test_degree_two_sail_equals_indecomposable(D):
 @pytest.mark.parametrize("D,expected", sorted(QUADRATIC_NORMS.items()))
 def test_quadratic_indecomposable_norms(D, expected):
     ctx = _ctx(D)
-    norms = {ZZ(y.norm()) for y in _totally_positive_sample(ctx, trace_max=60)
-             if is_indecomposable(y, ctx)}
-    assert norms == expected
+    sample = _totally_positive_sample(ctx, trace_max=60)
+    norms = {ZZ(y.norm()) for y in sample if is_indecomposable(y, ctx)}
+    assert norms == expected, (
+        f"sampled {len(sample)} totally positive elements of trace <= 60 "
+        f"in a coordinate box of {_coordinate_box(ctx, 60)}")
 
 
 @pytest.mark.parametrize("D", sorted(QUADRATIC_NORMS))
@@ -192,8 +219,9 @@ def test_minimality_in_every_signature_class(D):
     from indecomposables.certify import is_minimal
     ctx = _ctx(D)
     embs = ctx.real_embeddings()
+    box = _coordinate_box(ctx, 40)
     by_class = {}
-    for coeffs in sage.cartesian_product([range(-10, 11)] * ctx.degree):
+    for coeffs in sage.cartesian_product([range(-b, b + 1) for b in box]):
         y = ctx.from_coordinates(coeffs)
         vals = [embs[i](y) for i in range(ctx.degree)]
         if any(v == 0 for v in vals) or sum(v ** 2 for v in vals) > 200:
