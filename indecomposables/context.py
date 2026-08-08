@@ -175,21 +175,58 @@ class FieldContext:
         return self.K.real_embeddings(prec or self.prec)
 
     @cached_property
-    def log_unit_covering_radius(self):
+    def log_unit_lattice(self):
         """
-        Upper bound on the covering radius of the log lattice of U^+.
+        LLL-reduced basis of the log lattice of U^+, at the working precision.
 
-        Feeds the trace bound  Tr(alpha) <= n * disc^(1/n) * e^rho  for the
-        minimal-trace representative of an indecomposable.
+        Reduced because the covering radius bound below is only useful for a
+        reduced basis, and because it sits in an exponent in the search bound.
+        LLL needs integers, so a scaled rational approximation is reduced and
+        the resulting transformation applied to the exact real matrix.
         """
         R = RealField(self.prec)
         embs = self.real_embeddings()
         B = Matrix(R, [[R(e(u)).log() for e in embs]
                        for u in self.totally_positive_unit_basis])
         if B.nrows() == 0:
+            return B
+        scale = ZZ(2) ** (self.prec // 2)
+        Bz = Matrix(ZZ, [[(x * scale).round() for x in row] for row in B.rows()])
+        _, T = Bz.LLL(transformation=True)
+        return T.change_ring(R) * B
+
+    @cached_property
+    def log_unit_covering_radius(self):
+        """
+        Upper bound on the covering radius of the log lattice of U^+.
+
+        Babai's nearest-plane algorithm leaves an error ``e`` with
+        ``|<e, b_i*>| <= ||b_i*||^2 / 2`` for each Gram-Schmidt vector, so
+        ``rho <= sqrt(sum_i ||b_i*||^2) / 2``.
+
+        Sage's ``gram_schmidt`` only supports ``RDF``/``CDF``, not
+        ``RealField(prec)``, so the orthogonalisation is done here.  Dropping to
+        ``RDF`` would work but would cap this at 53 bits, and it appears in an
+        *exponent* in :attr:`trace_bound` -- a small error here is amplified.
+        """
+        R = RealField(self.prec)
+        B = self.log_unit_lattice
+        if B.nrows() == 0:
             return R(0)
-        gs, _ = B.gram_schmidt()
-        return sum((row.norm() for row in gs.rows()), R(0)) / 2
+
+        total, ortho = R(0), []
+        for v in B.rows():
+            w = v
+            for u, sq in ortho:
+                w = w - (v.dot_product(u) / sq) * u
+            sq = w.dot_product(w)
+            if sq <= 0:
+                raise ValueError(
+                    f"{self}: the log lattice of U^+ is rank deficient at "
+                    f"{self.prec} bits; raise prec")
+            ortho.append((w, sq))
+            total += sq
+        return total.sqrt() / 2
 
     @cached_property
     def trace_bound(self):
