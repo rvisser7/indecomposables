@@ -53,7 +53,8 @@ from .signatures import field_signature_classes, vector_to_mask
 logger = get_logger("enumerate")
 
 __all__ = [
-    "t2_bound", "trace_form", "candidates", "indecomposables_in_class",
+    "t2_bound", "trace_form", "candidates", "candidates_by_norm",
+    "brunotte_norm_bound", "norm_bound_for", "indecomposables_in_class",
     "indecomposables_exhaustive", "all_signature_classes",
 ]
 
@@ -117,6 +118,99 @@ def candidates(ctx, bound=None, cap=MAX_CANDIDATES):
     return Matrix(ZZ, vectors.mattranspose().sage()).rows()
 
 
+def unit_representatives(ctx):
+    """
+    Coset representatives of ``U / U^2``: the ``2^n`` products of ``-1`` and the
+    fundamental units with exponents in ``{0, 1}``.
+
+    Multiplying a generator by these reaches every signature its associates can
+    have, which is what lets one sweep over ideals cover all signature classes.
+    """
+    if getattr(ctx, "_unit_reps", None) is None:
+        from sage.all import prod
+        gens = [ctx.K(-1)] + list(ctx.fundamental_units)
+        reps = []
+        for mask in range(2 ** len(gens)):
+            reps.append(prod((g for i, g in enumerate(gens) if mask >> i & 1),
+                             ctx.K.one()))
+        ctx._unit_reps = reps
+    return ctx._unit_reps
+
+
+def candidates_by_norm(ctx, norm_bound, chunk=256):
+    """
+    Totally positive generators of principal ideals of norm at most ``norm_bound``.
+
+    Yields ``(norm, element, signature)`` for every associate of every principal
+    ideal generator, one per signature the associate can have.
+
+    This is the good way to generate candidates, and it is why the regulator
+    does not appear.  A bounded region of Minkowski space has to contain a
+    fundamental domain for the unit action, so :func:`candidates` pays a factor
+    ``e^(n rho)`` -- for Q(sqrt 61) that is 74,738 lattice vectors against 61
+    ideal norms.  An **ideal is already unit-invariant**, so enumerating by norm
+    gives one object per orbit for free.
+
+    Norms are processed in increasing order, which callers rely on: if ``x`` is
+    decomposable then ``x = y + z`` with ``y`` indecomposable and ``N(y) <
+    N(x)``, so everything needed to reject ``x`` has already been seen.
+    """
+    from sage.rings.number_field.bdd_height import bdd_norm_pr_ideal_gens
+
+    embs = ctx.real_embeddings()
+    reps = unit_representatives(ctx)
+    n = ctx.degree
+
+    for lo in range(1, int(norm_bound) + 1, chunk):
+        hi = min(lo + chunk - 1, int(norm_bound))
+        gens = bdd_norm_pr_ideal_gens(ctx.K, range(lo, hi + 1))
+        for nrm in range(lo, hi + 1):
+            for g in gens.get(nrm, []):
+                seen = set()
+                for u in reps:
+                    y = ctx.K(g) * u
+                    vals = [embs[i](y) for i in range(n)]
+                    if any(v == 0 for v in vals):
+                        continue
+                    sig = tuple(1 if v > 0 else -1 for v in vals)
+                    if sig in seen:
+                        continue
+                    seen.add(sig)
+                    yield ZZ(nrm), y, sig
+
+
+def brunotte_norm_bound(ctx):
+    """
+    Brunotte's bound on the norm of an indecomposable.
+
+    ``max_i prod_rho max(1, |sigma_i(u_rho)|)`` raised to the degree, over a
+    basis of the totally positive units.  Sometimes sharper than Kala-Yatsyna's
+    ``|disc|`` and sometimes far worse, so callers take the minimum of the two.
+
+    Brunotte, *Zur Zerlegung totalpositiver Zahlen in Ordnungen totalreeller
+    algebraischer Zahlkoerper*, Arch. Math. 41 (1983).
+    """
+    from sage.all import RealField
+    R = RealField(ctx.prec)
+    embs = ctx.real_embeddings()
+    units = ctx.totally_positive_unit_basis
+    if not units:
+        return None
+    try:
+        c = max(prod_over(max(R(1), abs(R(embs[i](u)))) for u in units)
+                for i in range(ctx.degree))
+        return ZZ((c ** ctx.degree).ceil())
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def prod_over(values):
+    out = None
+    for v in values:
+        out = v if out is None else out * v
+    return out
+
+
 def _screen(ctx, norm_bound, signature):
     """
     A fast approximate filter on coordinate vectors.
@@ -158,8 +252,22 @@ def _screen(ctx, norm_bound, signature):
 # Minimal elements
 # ---------------------------------------------------------------------------
 
+def norm_bound_for(ctx, bound=None):
+    """
+    Norm bound for an s-indecomposable: the best of the two known bounds.
+
+    Kala-Yatsyna give ``|disc|``; Brunotte's is sometimes sharper.  Both are
+    proved, so taking the minimum is safe.
+    """
+    if bound is not None:
+        return abs(ZZ(bound))
+    ky = abs(ZZ(ctx.discriminant))
+    br = brunotte_norm_bound(ctx)
+    return min(ky, br) if br is not None and br > 0 else ky
+
+
 def indecomposables_in_class(ctx, signature=None, bound=None, verify=True,
-                             sail=True):
+                             sail=True, method="ideals"):
     """
     The s-indecomposables of one signature class, canonical and deduplicated.
 
@@ -168,18 +276,86 @@ def indecomposables_in_class(ctx, signature=None, bound=None, verify=True,
     numerical search having been complete.
 
     With ``sail=False`` no sail membership is determined and ``on_sail`` is
-    ``None`` throughout, so every sail column ends up null.  That skips the
-    codifferent enumeration, which for a field with many s-indecomposables is a
-    second box search per element.
+    ``None`` throughout, so every sail column ends up null.
+
+    ``method`` selects candidate generation:
+
+    ``"ideals"``
+        Principal ideals of bounded norm.  The regulator does not appear, so
+        this is the one to use -- see :func:`candidates_by_norm`.
+    ``"lattice"``
+        Lattice points of bounded ``T2``.  Costs a factor ``e^(n rho)`` more,
+        but is completely independent of the ideal machinery, which makes it a
+        useful second opinion: the two must find the same set.
     """
     n = ctx.degree
     if signature is None:
         signature = [1] * n
     signature = tuple(int(s) for s in signature)
     totally_positive = all(s > 0 for s in signature)
-    norm_bound = abs(ZZ(bound if bound is not None else ctx.discriminant))
-    embs = ctx.real_embeddings()
+    norm_bound = norm_bound_for(ctx, bound)
 
+    if method == "ideals":
+        found = _by_ideals(ctx, signature, norm_bound, totally_positive, verify, sail)
+    elif method == "lattice":
+        found = _by_lattice(ctx, signature, norm_bound, totally_positive, verify, sail)
+    else:
+        raise ValueError(f"unknown method {method!r}; use 'ideals' or 'lattice'")
+
+    canon = ctx.normalizer
+    seen = {}
+    for y, on_sail, reason in found:
+        c = canon.canonical(y) if totally_positive else y
+        key = tuple(ctx.coordinates(c))
+        if key not in seen or on_sail:
+            seen[key] = (c, on_sail, reason)
+    out = sorted(seen.values(), key=lambda t: canon.sort_key(t[0]))
+    logger.info("%s signature %s: %s s-indecomposable%s (%s, norm bound %s)",
+                ctx.label or ctx.K, signature, len(out),
+                f", {sum(1 for t in out if t[1])} on the sail" if sail else
+                " (sail not computed)", method, norm_bound)
+    return out
+
+
+def _decide(y, ctx, signature, totally_positive, verify, sail):
+    """Classify one candidate; returns ``(element, on_sail, reason)`` or ``None``."""
+    if totally_positive and sail:
+        indec, on_sail, reason, _ = classify(y, ctx, verify=verify)
+        return (y, on_sail, reason) if indec else None
+    if is_indecomposable(y, ctx, signature, verify=verify):
+        return (y, is_on_sail_general(y, ctx) if sail else None, "box_exhausted")
+    return None
+
+
+def _by_ideals(ctx, signature, norm_bound, totally_positive, verify, sail):
+    """
+    Candidates from principal ideals of bounded norm.
+
+    Also records, per signature, the smallest absolute norm attained -- which is
+    what ``min_norm_all_signatures`` and ``min_norm_fprimea_signature`` are, and
+    it falls out of this sweep for nothing.  The lattice method cannot supply it
+    as cheaply, so it is only populated here.
+    """
+    found = []
+    smallest = getattr(ctx, "_smallest_norm_by_signature", None)
+    if smallest is None:
+        smallest = ctx._smallest_norm_by_signature = {}
+    for nrm, y, sig in candidates_by_norm(ctx, norm_bound):
+        prev = smallest.get(sig)
+        if prev is None or nrm < prev:
+            smallest[sig] = nrm
+        if sig != signature:
+            continue
+        decided = _decide(y, ctx, signature, totally_positive, verify, sail)
+        if decided is not None:
+            found.append(decided)
+    return found
+
+
+def _by_lattice(ctx, signature, norm_bound, totally_positive, verify, sail):
+    """Candidates from lattice points of bounded T2 -- the independent check."""
+    n = ctx.degree
+    embs = ctx.real_embeddings()
     keep = _screen(ctx, norm_bound, signature)
     found, screened, exact = [], 0, 0
     for v in candidates(ctx, t2_bound(ctx, norm_bound)):
@@ -196,30 +372,13 @@ def indecomposables_in_class(ctx, signature=None, bound=None, verify=True,
                 continue
             if abs(ZZ(y.norm())) > norm_bound:
                 continue
-            if totally_positive and sail:
-                indec, on_sail, reason, _ = classify(y, ctx, verify=verify)
-                if indec:
-                    found.append((y, on_sail, reason))
-            elif is_indecomposable(y, ctx, signature, verify=verify):
-                on_sail = (is_on_sail_general(y, ctx) if sail else None)
-                found.append((y, on_sail, "box_exhausted"))
+            decided = _decide(y, ctx, signature, totally_positive, verify, sail)
+            if decided is not None:
+                found.append(decided)
     logger.info("%s signature %s: screened %s, examined %s exactly (%.2f%%)",
                 ctx.label or ctx.K, signature, screened, exact,
                 100.0 * exact / max(screened, 1))
-
-    canon = ctx.normalizer
-    seen = {}
-    for y, on_sail, reason in found:
-        c = canon.canonical(y) if totally_positive else y
-        key = tuple(ctx.coordinates(c))
-        if key not in seen or on_sail:
-            seen[key] = (c, on_sail, reason)
-    out = sorted(seen.values(), key=lambda t: canon.sort_key(t[0]))
-    logger.info("%s signature %s: %s s-indecomposable%s",
-                ctx.label or ctx.K, signature, len(out),
-                f", {sum(1 for t in out if t[1])} on the sail" if sail else
-                " (sail not computed)")
-    return out
+    return found
 
 
 def is_on_sail_general(x, ctx):
@@ -241,13 +400,14 @@ def is_on_sail_general(x, ctx):
 # Entry points used by the registry
 # ---------------------------------------------------------------------------
 
-def indecomposables_exhaustive(ctx, verify=True, sail=True):
+def indecomposables_exhaustive(ctx, verify=True, sail=True, method="ideals"):
     """All indecomposables, i.e. the s-indecomposables of the totally positive class."""
     return [(y, on_sail)
-            for y, on_sail, _ in indecomposables_in_class(ctx, verify=verify, sail=sail)]
+            for y, on_sail, _ in indecomposables_in_class(
+                ctx, verify=verify, sail=sail, method=method)]
 
 
-def all_signature_classes(ctx, verify=True, sail=True):
+def all_signature_classes(ctx, verify=True, sail=True, method="ideals"):
     """
     The s-indecomposables of every signature class.
 
@@ -258,7 +418,8 @@ def all_signature_classes(ctx, verify=True, sail=True):
     masks, sigs = field_signature_classes(ctx)
     results = []
     for sig in sigs:
-        results.append(indecomposables_in_class(ctx, sig, verify=verify, sail=sail))
+        results.append(indecomposables_in_class(ctx, sig, verify=verify,
+                                                sail=sail, method=method))
     assert masks[0] == 0 and vector_to_mask(sigs[0]) == 0, \
         "class 0 must be the totally positive one"
     return masks, sigs, results
