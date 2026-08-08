@@ -14,8 +14,9 @@ pytestmark = pytest.mark.sage
 from indecomposables.context import FieldContext                    # noqa: E402
 from indecomposables.certify import is_indecomposable               # noqa: E402
 from indecomposables.enumerate import (                             # noqa: E402
-    all_signature_classes, candidates, indecomposables_exhaustive,
-    minimal_elements, t2_bound, trace_form,
+    all_signature_classes, brunotte_norm_bound, candidates,
+    candidates_by_norm, indecomposables_exhaustive, indecomposables_in_class,
+    norm_bound_for, t2_bound, trace_form, unit_representatives,
 )
 
 R = PolynomialRing(QQ, "x")
@@ -140,9 +141,74 @@ def test_known_quadratic_norms(label, expected, ctxs):
 
 
 @pytest.mark.slow
-def test_minimal_elements_bound_is_not_binding(ctx):
+def test_norm_bound_is_not_binding(ctx):
     """Doubling the norm bound must not find anything new."""
-    base = {tuple(ctx.coordinates(y)) for y, _, _ in minimal_elements(ctx)}
+    base = {tuple(ctx.coordinates(y)) for y, _, _ in indecomposables_in_class(ctx)}
     wider = {tuple(ctx.coordinates(y))
-             for y, _, _ in minimal_elements(ctx, bound=2 * abs(ZZ(ctx.discriminant)))}
+             for y, _, _ in indecomposables_in_class(
+                 ctx, bound=2 * abs(ZZ(ctx.discriminant)))}
     assert base == wider
+
+
+# ---------------------------------------------------------------------------
+# The two candidate generators
+# ---------------------------------------------------------------------------
+
+def test_ideal_and_lattice_methods_agree(ctx):
+    """
+    The most valuable test here.
+
+    The two generators share nothing: one enumerates principal ideals of bounded
+    norm, the other lattice points of bounded T2 via qfminim.  They must find
+    exactly the same s-indecomposables, so this checks both the ideal sweep and
+    the T2 bound at once -- a bug in either shows up as a difference.
+    """
+    by_ideal = {tuple(ctx.coordinates(y))
+                for y, _, _ in indecomposables_in_class(ctx, method="ideals")}
+    by_lattice = {tuple(ctx.coordinates(y))
+                  for y, _, _ in indecomposables_in_class(ctx, method="lattice")}
+    missing, extra = by_lattice - by_ideal, by_ideal - by_lattice
+    assert not missing, f"the ideal sweep missed {sorted(missing)[:3]}"
+    assert not extra, f"the ideal sweep found extra {sorted(extra)[:3]}"
+
+
+def test_unit_representatives_cover_every_signature(ctx):
+    """
+    One sweep over ideals has to reach every signature class, which it does only
+    if the representatives cover U/U^2.
+    """
+    embs = ctx.real_embeddings()
+    sigs = set()
+    for u in unit_representatives(ctx):
+        sigs.add(tuple(1 if embs[i](u) > 0 else -1 for i in range(ctx.degree)))
+    assert len(sigs) == 2 ** ctx.unit_signature_rank
+
+
+def test_norm_bound_is_the_better_of_the_two(ctx):
+    """Both bounds are proved, so the minimum is safe -- and never zero."""
+    ky = abs(ZZ(ctx.discriminant))
+    br = brunotte_norm_bound(ctx)
+    bound = norm_bound_for(ctx)
+    assert bound <= ky
+    if br is not None and br > 0:
+        assert bound == min(ky, br)
+    assert bound >= 1
+
+
+def test_every_result_is_within_the_norm_bound(ctx):
+    bound = norm_bound_for(ctx)
+    for y, _ in indecomposables_exhaustive(ctx):
+        assert abs(ZZ(y.norm())) <= bound
+
+
+@pytest.mark.slow
+def test_ideal_sweep_is_ordered_by_norm(ctx):
+    """
+    Callers rely on increasing norm order: if x is decomposable then x = y + z
+    with y indecomposable and N(y) < N(x), so everything needed to reject x has
+    already been seen.
+    """
+    last = 0
+    for nrm, _, _ in candidates_by_norm(ctx, min(norm_bound_for(ctx), 200)):
+        assert nrm >= last
+        last = nrm
