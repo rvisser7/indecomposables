@@ -31,7 +31,7 @@ Contract with the computation layer
 The driver imports the following from ``--compute-module`` (default
 ``indecomposables.record``) and needs nothing else::
 
-    build_context(coeffs, label)   -> ctx
+    build_context(coeffs, label, known=...)  -> ctx
     compute_record(ctx)            -> record
     failure_line(label, reason)    -> str, no newline
     to_row(record)                 -> str, no newline
@@ -67,16 +67,22 @@ class Item:
     label: str
     coeffs: tuple
     disc: int
+    known: tuple = ()          # (name, value) pairs joined from LMFDB
 
 
 def parse_input(path: Path, degree: int, disc_min: int, disc_max: int):
     """
-    Read ``input/deg<N>.txt``.
+    Read ``totally_real_fields/degree<n>.txt``.
 
-    Expected columns ``lmfdb_index|coeffs|monogenic``, optionally with a ``disc``
-    column.  Without ``disc`` the driver cannot filter by discriminant without
-    constructing every field, which is exactly the waste we want to avoid, so
-    that case is refused with a pointer at the fix.
+    ``disc`` is required: without it the driver would have to construct every
+    field just to decide whether it is in range, and every worker would repeat
+    that work.
+
+    The remaining LMFDB columns are optional but valuable.  Anything present is
+    passed to the computation as already known, so regulators and class numbers
+    are joined rather than recomputed -- a large fraction of total runtime for
+    values LMFDB already publishes, and class number in particular needs GRH to
+    be tolerable at all.
     """
     with path.open(newline="") as f:
         lines = f.read().splitlines()          # tolerates CRLF
@@ -106,8 +112,42 @@ def parse_input(path: Path, degree: int, disc_min: int, disc_max: int):
             continue
         coeffs = tuple(int(c) for c in parts[idx["coeffs"]].split(","))
         index = parts[idx["lmfdb_index"]] if "lmfdb_index" in idx else "1"
-        items.append(Item(f"{degree}.{degree}.{disc}.{index}", coeffs, disc))
+        items.append(Item(f"{degree}.{degree}.{disc}.{index}", coeffs, disc,
+                          _known(parts, idx)))
     return items
+
+
+#: Input columns that are LMFDB invariants of the field, and the name each maps
+#: to in the schema.  Anything absent or ``\N`` is simply not passed on.
+KNOWN_COLUMNS = {
+    "disc": "discriminant",
+    "regulator": "regulator",
+    "class_number": "class_number",
+    "narrow_class_number": "narrow_class_number",
+    "monogenic": "is_monogenic",
+    "num_subfields": "num_subfields",
+    "galois_label": "galois_label",
+}
+
+_NUMERIC = {"discriminant", "class_number", "narrow_class_number",
+            "is_monogenic", "num_subfields"}
+
+
+def _known(parts, idx):
+    out = []
+    for src, dest in KNOWN_COLUMNS.items():
+        if src not in idx:
+            continue
+        raw = parts[idx[src]]
+        if raw in ("", "\\N"):
+            continue
+        try:
+            value = int(raw) if dest in _NUMERIC else (
+                float(raw) if dest == "regulator" else raw)
+        except ValueError:
+            continue
+        out.append((dest, value))
+    return tuple(out)
 
 
 def done_labels(work_dir: Path) -> set:
@@ -162,7 +202,8 @@ def worker(slot, work_q, status_q, heartbeat, stop, args):
             status, detail, record = "ok", "", None
             try:
                 signal.setitimer(signal.ITIMER_REAL, args.timeout)
-                ctx = compute.build_context(item.coeffs, item.label)
+                ctx = compute.build_context(item.coeffs, item.label,
+                                            known=dict(item.known))
                 record = compute.compute_record(ctx)
             except _SoftTimeout:
                 status, detail = "timeout", f"exceeded {args.timeout}s"
@@ -190,7 +231,7 @@ def worker(slot, work_q, status_q, heartbeat, stop, args):
 class _SelfTestCompute:
     """Synthetic workload with realistic cost skew, so the driver is testable."""
 
-    def build_context(self, coeffs, label):
+    def build_context(self, coeffs, label, known=None):
         rng = random.Random(label)
         return {"label": label, "cost": rng.lognormvariate(-2.5, 1.4), "rng": rng}
 
@@ -219,7 +260,7 @@ def parse_args(argv=None):
     p.add_argument("--disc-min", type=int, default=1)
     p.add_argument("--disc-max", type=int, required=True)
     p.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
-    p.add_argument("--input-dir", default="input")
+    p.add_argument("--input-dir", default="totally_real_fields")
     p.add_argument("--work-dir", default="work")
     p.add_argument("--compute-module", default="indecomposables.record")
     p.add_argument("--timeout", type=float, default=900.0,
