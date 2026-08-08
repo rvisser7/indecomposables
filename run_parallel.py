@@ -35,7 +35,7 @@ The driver imports the following from ``--compute-module`` (default
 ``indecomposables.record``) and needs nothing else::
 
     build_context(coeffs, label, known=...)  -> ctx
-    compute_record(ctx)            -> record
+    compute_record(ctx, **options) -> record
     failure_line(label, reason)    -> str, no newline
     to_row(record)                 -> str, no newline
 
@@ -291,7 +291,7 @@ def worker(slot, work_q, status_q, heartbeat, stop, args):
                 signal.setitimer(signal.ITIMER_REAL, args.timeout)
                 ctx = compute.build_context(item.coeffs, item.label,
                                             known=dict(item.known))
-                record = compute.compute_record(ctx)
+                record = compute.compute_record(ctx, **args.compute_options)
             except _SoftTimeout:
                 status, detail = "timeout", f"exceeded {args.timeout}s"
             except Exception as exc:                  # noqa: BLE001 - recorded, not swallowed
@@ -322,7 +322,7 @@ class _SelfTestCompute:
         rng = random.Random(label)
         return {"label": label, "cost": rng.lognormvariate(-2.5, 1.4), "rng": rng}
 
-    def compute_record(self, ctx):
+    def compute_record(self, ctx, **options):
         if ctx["rng"].random() < 0.03:
             raise ValueError("synthetic failure")
         time.sleep(min(ctx["cost"], 30.0))
@@ -358,6 +358,9 @@ def parse_args(argv=None):
                    help="soft per-field timeout in seconds")
     p.add_argument("--hard-timeout-factor", type=float, default=4.0,
                    help="kill a worker stuck this many times past --timeout")
+    p.add_argument("--only-indecomposables", action="store_true",
+                   help="compute the s-indecomposables and skip everything about "
+                        "sails; every sail column is left null")
     p.add_argument("--fsync", action="store_true",
                    help="fsync after every row (slower, survives power loss)")
     p.add_argument("--no-resume", action="store_true",
@@ -374,7 +377,11 @@ def parse_args(argv=None):
     p.add_argument("--progress-every", type=float, default=15.0)
     p.add_argument("--self-test", action="store_true")
     p.add_argument("--dry-run", action="store_true")
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    # Options forwarded to compute_record.  Kept as a dict so adding a flag does
+    # not change the worker's call site.
+    args.compute_options = {"sail": not args.only_indecomposables}
+    return args
 
 
 def main(argv=None):
@@ -432,6 +439,9 @@ def main(argv=None):
               "recomputed; the new row supersedes the old one at merge time")
     print(f"  workers: {args.workers}   soft timeout: {args.timeout}s   "
           f"hard: {args.timeout * args.hard_timeout_factor}s")
+    if args.only_indecomposables:
+        print("  sail columns will be left null (--only-indecomposables); "
+              "re-run later with --require indecomposables_on_sail to fill them")
     print(f"  shards:  {work_dir}/shard-NNN.txt")
     if args.dry_run or not items:
         print("nothing to do" if not items else "dry run; exiting")
