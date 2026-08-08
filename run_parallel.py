@@ -23,6 +23,9 @@ Design
   watchdog in the parent, which kills and replaces a worker that has stopped
   responding.  The soft timeout handles the common case; the hard one exists
   because a signal cannot always interrupt a long-running PARI call.
+* **Minimal input.**  The input table needs only ``coeffs``; a ``disc`` column
+  and the other LMFDB invariants are optional, and supplying them saves
+  recomputation rather than enabling anything.
 * **Dynamic scheduling.**  Cost per field varies by orders of magnitude, so
   work is pulled from a queue rather than partitioned up front by line number.
 
@@ -70,19 +73,24 @@ class Item:
     known: tuple = ()          # (name, value) pairs joined from LMFDB
 
 
-def parse_input(path: Path, degree: int, disc_min: int, disc_max: int):
+def parse_input(path: Path, degree: int, disc_min: int, disc_max: int,
+                sorted_input=True):
     """
     Read ``totally_real_fields/degree<n>.txt``.
 
-    ``disc`` is required: without it the driver would have to construct every
-    field just to decide whether it is in range, and every worker would repeat
-    that work.
+    Only ``coeffs`` is required.  ``lmfdb_index`` defaults to 1.
 
-    The remaining LMFDB columns are optional but valuable.  Anything present is
-    passed to the computation as already known, so regulators and class numbers
-    are joined rather than recomputed -- a large fraction of total runtime for
-    values LMFDB already publishes, and class number in particular needs GRH to
-    be tolerable at all.
+    ``disc`` is optional.  When absent it is computed here with ``nfdisc``,
+    which is microseconds per field against hours of sail computation -- and it
+    has to be computed regardless, because the LMFDB label is ``n.n.|disc|.i``
+    and there is no field name without it.  Supplying the column just saves that
+    and lets the scan stop early.
+
+    Every other LMFDB column is optional and, when present, passed to the
+    computation as already known.  Those are worth supplying: regulators and
+    class numbers are a large fraction of total runtime for values LMFDB already
+    publishes, and class number needs GRH to be tolerable at all.  Nothing
+    breaks without them; they are simply recomputed.
     """
     with path.open(newline="") as f:
         lines = f.read().splitlines()          # tolerates CRLF
@@ -92,29 +100,60 @@ def parse_input(path: Path, degree: int, disc_min: int, disc_max: int):
     header = [c.strip() for c in lines[0].split("|")]
     if "coeffs" not in header:
         raise SystemExit(f"{path}: expected a header line with a 'coeffs' column")
-    if "disc" not in header:
-        raise SystemExit(
-            f"{path}: no 'disc' column.  Regenerate the input table from LMFDB "
-            "with the discriminant included -- filtering and sharding both need "
-            "it, and recomputing it per field is the thing this driver avoids.")
+    if "coeffs" not in header:
+        raise SystemExit(f"{path}: expected a header line with a 'coeffs' column")
 
     idx = {name: i for i, name in enumerate(header)}
-    items = []
+    have_disc = "disc" in idx
+    items, computed = [], 0
     for line in lines[1:]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         parts = [c.strip() for c in line.split("|")]
-        disc = abs(int(parts[idx["disc"]]))
+        coeffs = tuple(int(c) for c in parts[idx["coeffs"]].split(","))
+
+        if have_disc:
+            disc = abs(int(parts[idx["disc"]]))
+        else:
+            disc = abs(discriminant_of(coeffs))
+            computed += 1
+
         if disc > disc_max:
-            break                               # input is sorted by |disc|
+            if sorted_input:
+                break
+            continue
         if disc < disc_min:
             continue
-        coeffs = tuple(int(c) for c in parts[idx["coeffs"]].split(","))
         index = parts[idx["lmfdb_index"]] if "lmfdb_index" in idx else "1"
         items.append(Item(f"{degree}.{degree}.{disc}.{index}", coeffs, disc,
                           _known(parts, idx)))
+    if computed:
+        print(f"  computed {computed} discriminant(s) with nfdisc "
+              f"({path} has no 'disc' column)")
     return items
+
+
+def discriminant_of(coeffs):
+    """
+    Field discriminant from the defining polynomial, via PARI's ``nfdisc``.
+
+    Used when the input table has no ``disc`` column.  ``nfdisc`` alone, not
+    ``bnfinit``: this must stay cheap, since it runs once per field in the
+    parent before any work is handed out.
+    """
+    try:
+        from sage.all import ZZ, PolynomialRing, pari
+    except ImportError:
+        raise SystemExit(
+            "computing discriminants needs Sage; either run under "
+            "`sage -python`, or add a 'disc' column to the input table with "
+            "scripts/make_input_files.py")
+    R = PolynomialRing(ZZ, "x")
+    poly = list(coeffs)
+    if not poly or poly[-1] != 1:
+        poly = poly + [1]
+    return ZZ(pari(R(poly)).nfdisc())
 
 
 #: Input columns that are LMFDB invariants of the field, and the name each maps
@@ -261,6 +300,10 @@ def parse_args(argv=None):
     p.add_argument("--disc-max", type=int, required=True)
     p.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     p.add_argument("--input-dir", default="totally_real_fields")
+    p.add_argument("--scan-all", action="store_true",
+                   help="read the whole input table instead of stopping at the "
+                        "first row past --disc-max; needed only if the table is "
+                        "not sorted by |disc|")
     p.add_argument("--work-dir", default="work")
     p.add_argument("--compute-module", default="indecomposables.record")
     p.add_argument("--timeout", type=float, default=900.0,
@@ -310,7 +353,8 @@ def main(argv=None):
                  for i in range(args.limit or 60)]
     else:
         src = Path(args.input_dir) / f"degree{args.degree}.txt"
-        items = parse_input(src, args.degree, args.disc_min, args.disc_max)
+        items = parse_input(src, args.degree, args.disc_min, args.disc_max,
+                            sorted_input=not args.scan_all)
 
     total_in_scope = len(items)
     skipped = 0
