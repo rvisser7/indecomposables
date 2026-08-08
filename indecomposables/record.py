@@ -139,19 +139,27 @@ def _base(ctx):
     return rec
 
 
-def compute_record(ctx, verify=True):
-    """Compute one field across every signature class; return a frozen mapping."""
+def compute_record(ctx, verify=True, sail=True):
+    """
+    Compute one field across every signature class; return a frozen mapping.
+
+    With ``sail=False`` the sail is not computed and every sail column is left
+    null: ``indecomposables_on_sail``, ``num_indecomposables_on_sail``,
+    ``num_sail_facets``, ``sail_facet_normals``, ``sail_facet_vertices``,
+    ``codifferent_traces`` and ``max_codifferent_trace``.  The s-indecomposables
+    themselves are unaffected.
+    """
     from sage.all import ZZ
 
     best_algorithm(ctx)          # raises early if nothing applies
     rec = _base(ctx)
 
-    masks, sigs, results, failures = _all_classes(ctx, verify)
+    masks, sigs, results, failures = _all_classes(ctx, verify, sail)
 
     coords = [[[int(t) for t in ctx.coordinates(y)] for y, _, _ in cls]
               for cls in results]
     norms = [[int(abs(ZZ(ctx.K(y).norm()))) for y, _, _ in cls] for cls in results]
-    sail = [[1 if on else 0 for _, on, _ in cls] for cls in results]
+    on_sail = [[1 if on else 0 for _, on, _ in cls] for cls in results]
 
     traces = [[int(ZZ(ctx.K(y).trace())) for y, _, _ in cls] for cls in results]
     nonunit = [[n for n in cls if n != 1] for cls in norms]
@@ -172,19 +180,22 @@ def compute_record(ctx, verify=True):
         "indecomposables_all": coords,
         "indecomposables_norms_all": norms,
         "indecomposables_traces_all": traces,
-        "indecomposables_on_sail": sail,
+        "indecomposables_on_sail": on_sail if sail else None,
         "min_norm_indecomposable": [min(c) if c else None for c in nonunit],
         "max_norm_indecomposable": [max(c) if c else None for c in norms],
         "min_trace_indecomposable": [min(c) if c else None for c in traces],
         "max_trace_indecomposable": [max(c) if c else None for c in traces],
-        "num_indecomposables_on_sail": [sum(c) for c in sail],
+        "num_indecomposables_on_sail": [sum(c) for c in on_sail] if sail else None,
     })
-    _add_codifferent_traces(ctx, rec, results)
-    _add_sail_columns(ctx, rec, sigs, results)
+    if sail:
+        _add_codifferent_traces(ctx, rec, results)
+        _add_sail_columns(ctx, rec, sigs, results)
+    else:
+        logger.info("%s: sail columns skipped (sail=False)", ctx.label)
     return MappingProxyType(rec)
 
 
-def _all_classes(ctx, verify):
+def _all_classes(ctx, verify, sail=True):
     """
     Run every signature class, keeping whatever succeeds.
 
@@ -199,7 +210,8 @@ def _all_classes(ctx, verify):
     results, failures = [], []
     for sig in sigs:
         try:
-            results.append(indecomposables_in_class(ctx, sig, verify=verify))
+            results.append(indecomposables_in_class(ctx, sig, verify=verify,
+                                                    sail=sail))
         except Exception as exc:                       # noqa: BLE001 - recorded
             logger.warning("%s signature %s failed: %s", ctx.label, sig, exc)
             failures.append(f"signature {tuple(sig)}: {type(exc).__name__}")
