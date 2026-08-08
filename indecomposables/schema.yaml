@@ -3,6 +3,7 @@
 # Each column needs a `type` and a `short_doc`; `long_doc` is optional prose
 # for data/README.md. `files` determines which files this column is included in the output.
 # Could be either mini and/or full.
+#  Mini generally used for just plotting data, so full lists not really necessary.
 #
 # `type` is logical: the element type plus how deeply it is nested, e.g.
 # `numeric[][]` for a 2-D array of numbers.  Add `jagged: true` when the nesting
@@ -37,7 +38,7 @@ discriminant:
 
 coeffs:
   type: numeric[]
-  files: [mini, full]
+  files: [full]
   short_doc: 'coefficients of the LMFDB polredabs defining polynomial, constant term first'
 
 regulator:
@@ -88,12 +89,12 @@ galois_label:
 
 fundamental_units:
   type: numeric[][]
-  files: [mini, full]
+  files: [full]
   short_doc: 'fundamental units as coefficient vectors'
 
 positive_unit_basis:
   type: numeric[][]
-  files: [mini, full]
+  files: [full]
   short_doc: 'Z-basis of the totally positive units as coefficient vectors'
 
 unit_signature_rank:
@@ -108,8 +109,6 @@ signature_classes:
   long_doc: >-
     Canonical representatives are the numerically smallest bitmask in each coset, listed ascending, so index 0 is always the totally positive class and every representative begins with +. The embeddings sigma_1 ... sigma_n are ordered by increasing sigma_i(a), where a is the root of the LMFDB defining polynomial.
 
-
-
 num_signature_classes:
   type: smallint
   files: [mini, full]
@@ -121,7 +120,7 @@ totally_positive_unit_index:
   type: integer
   files: [mini, full]
   short_doc: 'index [U : U^+]'
-  long_doc: "The index of the totall positive units U^+ inside the full unit group U"
+  long_doc: "The index of the totally positive units U^+ inside the full unit group U"
 
 # --------------------------
 # INDECOMPOSABLES INFO !
@@ -163,7 +162,7 @@ indecomposables_traces_all:
   type: numeric[][]
   jagged: true
   files: [full]
-  short_doc: 'traces of indecomposables_all, same order'
+  short_doc: 'traces of canonical representatives of indecomposables_all, same order'
 
 # Here we can exclude units in all signatures (as units are always indecomposable)
 min_norm_indecomposable:
@@ -238,7 +237,7 @@ num_indecomposables_on_sail:
 
 num_sail_facets:
   type: integer[]
-  files: [mini, full]
+  files: [full]
   short_doc: 'facets of the totally positive sail'
 
 indecomposables_on_sail:
