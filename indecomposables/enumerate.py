@@ -158,13 +158,19 @@ def _screen(ctx, norm_bound, signature):
 # Minimal elements
 # ---------------------------------------------------------------------------
 
-def indecomposables_in_class(ctx, signature=None, bound=None, verify=True):
+def indecomposables_in_class(ctx, signature=None, bound=None, verify=True,
+                             sail=True):
     """
     The s-indecomposables of one signature class, canonical and deduplicated.
 
     Returns a list of ``(element, on_sail, reason)``.  ``reason`` records which
     test decided the element, since only ``box_exhausted`` depends on a
     numerical search having been complete.
+
+    With ``sail=False`` no sail membership is determined and ``on_sail`` is
+    ``None`` throughout, so every sail column ends up null.  That skips the
+    codifferent enumeration, which for a field with many s-indecomposables is a
+    second box search per element.
     """
     n = ctx.degree
     if signature is None:
@@ -190,12 +196,13 @@ def indecomposables_in_class(ctx, signature=None, bound=None, verify=True):
                 continue
             if abs(ZZ(y.norm())) > norm_bound:
                 continue
-            if totally_positive:
+            if totally_positive and sail:
                 indec, on_sail, reason, _ = classify(y, ctx, verify=verify)
                 if indec:
                     found.append((y, on_sail, reason))
             elif is_indecomposable(y, ctx, signature, verify=verify):
-                found.append((y, is_on_sail_general(y, ctx), "box_exhausted"))
+                on_sail = (is_on_sail_general(y, ctx) if sail else None)
+                found.append((y, on_sail, "box_exhausted"))
     logger.info("%s signature %s: screened %s, examined %s exactly (%.2f%%)",
                 ctx.label or ctx.K, signature, screened, exact,
                 100.0 * exact / max(screened, 1))
@@ -208,8 +215,10 @@ def indecomposables_in_class(ctx, signature=None, bound=None, verify=True):
         if key not in seen or on_sail:
             seen[key] = (c, on_sail, reason)
     out = sorted(seen.values(), key=lambda t: canon.sort_key(t[0]))
-    logger.info("%s signature %s: %s s-indecomposable, %s on the sail",
-                ctx.label or ctx.K, signature, len(out), sum(1 for t in out if t[1]))
+    logger.info("%s signature %s: %s s-indecomposable%s",
+                ctx.label or ctx.K, signature, len(out),
+                f", {sum(1 for t in out if t[1])} on the sail" if sail else
+                " (sail not computed)")
     return out
 
 
@@ -232,12 +241,13 @@ def is_on_sail_general(x, ctx):
 # Entry points used by the registry
 # ---------------------------------------------------------------------------
 
-def indecomposables_exhaustive(ctx, verify=True):
+def indecomposables_exhaustive(ctx, verify=True, sail=True):
     """All indecomposables, i.e. the s-indecomposables of the totally positive class."""
-    return [(y, on_sail) for y, on_sail, _ in indecomposables_in_class(ctx, verify=verify)]
+    return [(y, on_sail)
+            for y, on_sail, _ in indecomposables_in_class(ctx, verify=verify, sail=sail)]
 
 
-def all_signature_classes(ctx, verify=True):
+def all_signature_classes(ctx, verify=True, sail=True):
     """
     The s-indecomposables of every signature class.
 
@@ -248,7 +258,7 @@ def all_signature_classes(ctx, verify=True):
     masks, sigs = field_signature_classes(ctx)
     results = []
     for sig in sigs:
-        results.append(indecomposables_in_class(ctx, sig, verify=verify))
+        results.append(indecomposables_in_class(ctx, sig, verify=verify, sail=sail))
     assert masks[0] == 0 and vector_to_mask(sigs[0]) == 0, \
         "class 0 must be the totally positive one"
     return masks, sigs, results
