@@ -187,6 +187,7 @@ def compute_record(ctx, verify=True, sail=True):
         "max_trace_indecomposable": [max(c) if c else None for c in traces],
         "num_indecomposables_on_sail": [sum(c) for c in on_sail] if sail else None,
     })
+    _add_signature_norms(ctx, rec)
     if sail:
         _add_codifferent_traces(ctx, rec, results)
         _add_sail_columns(ctx, rec, sigs, results)
@@ -217,6 +218,35 @@ def _all_classes(ctx, verify, sail=True):
             failures.append(f"signature {tuple(sig)}: {type(exc).__name__}")
             results.append([])
     return masks, sigs, results, failures
+
+
+def _add_signature_norms(ctx, rec):
+    """
+    ``min_norm_all_signatures`` and ``min_norm_fprimea_signature``.
+
+    Both fall out of the ideal sweep, which records the smallest absolute norm
+    attained in each signature as it goes; nothing extra is computed here.  Only
+    available with the ideal method, so both stay null under ``method="lattice"``.
+    """
+    from sage.all import ZZ
+
+    smallest = getattr(ctx, "_smallest_norm_by_signature", None)
+    if not smallest:
+        return
+    # Every raw signature in one class has the same minimum, since multiplying
+    # by a unit moves within the class and preserves the absolute norm.
+    rec["min_norm_all_signatures"] = int(max(smallest.values()))
+
+    try:
+        a = ctx.K.gen()
+        fprime = ctx.K.defining_polynomial().derivative()(a)
+        embs = ctx.real_embeddings()
+        sig = tuple(1 if embs[i](fprime) > 0 else -1 for i in range(ctx.degree))
+    except Exception as exc:                        # noqa: BLE001 - recorded
+        logger.info("%s: f'(a) signature unavailable: %s", ctx.label, exc)
+        return
+    if sig in smallest:
+        rec["min_norm_fprimea_signature"] = int(ZZ(smallest[sig]))
 
 
 def _add_codifferent_traces(ctx, rec, results):
