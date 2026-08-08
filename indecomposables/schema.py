@@ -97,6 +97,11 @@ def _enc_float(v):
 #: mechanical substitution at load time.
 OPEN, CLOSE = "[", "]"
 
+#: Bracket pairs accepted when *reading*.  Only ``[]`` is ever written, but
+#: earlier files used Postgres's ``{}``, and a format change should not force a
+#: recomputation -- so the parser takes either.  Write strictly, read leniently.
+BRACKETS = {"[": "]", "{": "}"}
+
 
 def _enc_nested(v):
     """
@@ -117,15 +122,16 @@ def _enc_nested(v):
 
 def _split_list(s):
     """Split the body of a bracketed list on top-level commas."""
-    if not (s.startswith(OPEN) and s.endswith(CLOSE)):
+    opener = s[:1]
+    if opener not in BRACKETS or not s.endswith(BRACKETS[opener]):
         raise SchemaError(f"not a list: {s!r}")
     body, out, depth, cur = s[1:-1], [], 0, []
     if not body:
         return []
     for ch in body:
-        if ch == OPEN:
+        if ch in BRACKETS:
             depth += 1
-        elif ch == CLOSE:
+        elif ch in BRACKETS.values():
             depth -= 1
         if ch == "," and depth == 0:
             out.append("".join(cur))
@@ -141,8 +147,10 @@ def _dec_nested(s):
     s = s.strip()
     if s == NULL:
         return None
-    if s.startswith(OPEN):
+    if s[:1] in BRACKETS:
         return tuple(_dec_nested(t) for t in _split_list(s))
+    if s.upper() == "NULL":              # in-array null, as older files wrote it
+        return None
     return int(s)
 
 
@@ -464,8 +472,17 @@ def decode_row(line: str, tier: str) -> dict:
             if not c.nullable:
                 raise SchemaError(f"column {c.name!r} may not be NULL")
             rec[c.name] = None
-        else:
+            continue
+        try:
             rec[c.name] = c.decode(raw)
+        except SchemaError:
+            raise
+        except (TypeError, ValueError) as exc:
+            # Without this the failure is a bare int() error from inside the
+            # parser, with no indication of which column or which row.
+            raise SchemaError(
+                f"column {c.name!r} (declared {c.declared_type!r}) could not be "
+                f"read from {raw[:60]!r}: {exc}") from exc
     return rec
 
 
