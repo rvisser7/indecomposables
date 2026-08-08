@@ -30,7 +30,27 @@ from functools import cached_property
 
 from sage.all import AA, Matrix, NumberField, PolynomialRing, QQ, RealField, ZZ
 
+from .logging_utils import get_logger
+
 ZZx = PolynomialRing(ZZ, "x")
+
+logger = get_logger("context")
+
+
+def _try(compute):
+    """
+    Run ``compute``, returning ``None`` if it fails.
+
+    Used for the LMFDB-style invariants.  These are conveniences, not the point
+    of the computation, so one of them being slow or unavailable must not lose
+    the indecomposables for that field -- a NULL in the column is the right
+    outcome, and it is recoverable by supplying the value in the input table.
+    """
+    try:
+        return compute()
+    except Exception as exc:                       # noqa: BLE001 - recorded
+        logger.info("invariant unavailable: %s: %s", type(exc).__name__, exc)
+        return None
 
 __all__ = ["FieldContext"]
 
@@ -102,12 +122,75 @@ class FieldContext:
     @cached_property
     def regulator(self):
         v = self.known.get("regulator")
-        return float(v) if v is not None else float(self.K.regulator())
+        return float(v) if v is not None else _try(
+            lambda: float(self.K.regulator()))
 
     @cached_property
     def class_number(self):
+        """
+        Class number.
+
+        Computed only when not supplied.  At higher degree this is one of the
+        slowest things here, so joining it from LMFDB is worth doing for a large
+        run -- see the note in totally_real_fields/README.md.
+        """
         v = self.known.get("class_number")
-        return ZZ(v) if v is not None else ZZ(self.K.class_number())
+        return ZZ(v) if v is not None else _try(lambda: ZZ(self.K.class_number()))
+
+    @cached_property
+    def narrow_class_number(self):
+        """
+        Narrow class number h+.
+
+        Computed from the narrow class group rather than derived as
+        ``h * 2^(n-r)``: deriving it would make the ``h+/h ==
+        num_signature_classes`` consistency check tautological, and that check
+        has already earned its place.
+        """
+        v = self.known.get("narrow_class_number")
+        if v is not None:
+            return ZZ(v)
+        return _try(lambda: ZZ(self.K.narrow_class_group().order()))
+
+    @cached_property
+    def monogenic_index(self):
+        """``[O_K : Z[a]]``, the index of the power order in the maximal order."""
+        v = self.known.get("monogenic_index")
+        if v is not None:
+            return ZZ(v)
+
+        def compute():
+            ratio = ZZ(self.K.defining_polynomial().discriminant()) / self.discriminant
+            return ZZ(ratio.abs().sqrt())
+        return _try(compute)
+
+    @cached_property
+    def num_subfields(self):
+        """Proper subfields, excluding Q and K itself."""
+        v = self.known.get("num_subfields")
+        if v is not None:
+            return ZZ(v)
+        return _try(lambda: ZZ(len(self.K.subfields()) - 2))
+
+    @cached_property
+    def is_galois(self):
+        v = self.known.get("is_galois")
+        if v is not None:
+            return ZZ(1 if v else 0)
+        return _try(lambda: ZZ(1 if self.K.is_galois() else 0))
+
+    @cached_property
+    def galois_label(self):
+        """LMFDB label ``nTt`` of the Galois group, via PARI's ``polgalois``."""
+        v = self.known.get("galois_label")
+        if v is not None:
+            return str(v)
+
+        def compute():
+            from sage.all import pari
+            data = pari(self.K.defining_polynomial()).polgalois()
+            return f"{self.degree}T{int(data[2])}"
+        return _try(compute)
 
     # -- coordinates --------------------------------------------------------
 
