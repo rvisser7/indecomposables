@@ -245,32 +245,30 @@ def _add_sail_columns(ctx, rec, sigs, results):
     """
     try:
         from .sail import sail_facets
-    except (ImportError, NotImplementedError):
+    except (ImportError, NotImplementedError) as exc:
+        logger.info("sail columns skipped: %s", exc)
         return
-    normals, vertices, counts, complete = [], [], [], []
+
+    all_normals, all_vertices, counts, complete = [], [], [], []
     for sig, cls in zip(sigs, results):
-        index = {tuple(ctx.coordinates(y)): i for i, (y, _, _) in enumerate(cls)}
+        elements = [y for y, _, _ in cls]
         try:
-            facets, ok = sail_facets(ctx, sig)
-        except Exception as exc:                        # noqa: BLE001
-            logger.warning("%s sail for %s failed: %s", ctx.label, sig, exc)
-            normals.append([])
-            vertices.append([])
-            counts.append(0)
-            complete.append(0)
-            continue
-        normals.append([[int(t) for t in ctx.coordinates(lam)] for lam, _ in facets])
-        vertices.append([sorted(index[tuple(ctx.coordinates(v))] for v in verts)
-                         for _, verts in facets])
-        counts.append(len(facets))
+            normals, vertices, ok = sail_facets(ctx, sig, elements)
+        except Exception as exc:                        # noqa: BLE001 - recorded
+            logger.warning("%s: sail for signature %s failed: %s",
+                           ctx.label, tuple(sig), exc)
+            normals, vertices, ok = [], [], False
+        all_normals.append(normals)
+        all_vertices.append(vertices)
+        counts.append(len(normals))
         complete.append(1 if ok else 0)
+
     rec.update({
-        "sail_facet_normals": normals,
-        "sail_facet_vertices": vertices,
+        "sail_facet_normals": all_normals,
+        "sail_facet_vertices": all_vertices,
+        "num_sail_facets": counts,
         "num_sail_facets_by_signature": counts,
         "sail_complete_by_signature": complete,
-        "num_sail_facets": counts[0] if counts else None,
-        "sail_complete": bool(complete[0]) if complete else None,
     })
 
 
