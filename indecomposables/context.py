@@ -150,7 +150,7 @@ class FieldContext:
 
     @cached_property
     def totally_positive_unit_basis(self):
-        from normalize import totally_positive_unit_basis
+        from .normalize import totally_positive_unit_basis
         return totally_positive_unit_basis(self.K)
 
     @cached_property
@@ -164,7 +164,7 @@ class FieldContext:
     @cached_property
     def normalizer(self):
         """The canonical-representative machinery, sharing this basis."""
-        from normalize import UnitOrbitNormalizer
+        from .normalize import UnitOrbitNormalizer
         return UnitOrbitNormalizer(self.K, basis=self.basis,
                                    unit_basis=self.totally_positive_unit_basis,
                                    prec=self.prec)
