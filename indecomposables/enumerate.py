@@ -93,23 +93,65 @@ def trace_form(ctx):
 
 def candidates(ctx, bound=None, cap=MAX_CANDIDATES):
     """
-    Every nonzero ``x`` in the order with ``T2(x) <= bound``, up to sign pairs.
+    Coefficient vectors of every nonzero ``x`` with ``T2(x) <= bound``.
 
-    ``qfminim`` returns one of each ``+-`` pair, so callers that care about
-    signature classes must consider both ``x`` and ``-x``.  Delegated to PARI:
-    this is the inner loop and must not be a Python loop.
+    Yields **integer coordinate vectors**, not field elements.  Constructing a
+    Sage element costs far more than the arithmetic needed to reject it, and the
+    overwhelming majority are rejected: for Q(sqrt 61) the bound admits some
+    80,000 vectors of which about 74 survive the norm filter.  So the caller
+    screens in coordinate space and builds elements only for survivors.
+
+    ``qfminim`` returns one of each ``+-`` pair, so a caller that cares about
+    signature classes must consider both ``v`` and ``-v``.
     """
     G = trace_form(ctx)
     B = bound if bound is not None else t2_bound(ctx)
     count, _, vectors = G.__pari__().qfminim(int(B) + 1, cap, flag=0)
     if int(count) >= cap:
         raise CandidateExplosion(
-            f"{ctx.label or ctx.K}: more than {cap} candidates with T2 <= {float(B):.3g}; "
-            "the regulator makes exhaustive search impractical for this field")
+            f"{ctx.label or ctx.K}: more than {cap} candidates with "
+            f"T2 <= {float(B):.3g}; the regulator makes exhaustive search "
+            "impractical for this field")
     logger.info("%s: %s candidate pairs with T2 <= %.4g",
                 ctx.label or ctx.K, count, float(B))
-    for col in Matrix(ZZ, vectors.mattranspose().sage()).rows():
-        yield ctx.from_coordinates(col)
+    return Matrix(ZZ, vectors.mattranspose().sage()).rows()
+
+
+def _screen(ctx, norm_bound, signature):
+    """
+    A fast approximate filter on coordinate vectors.
+
+    Returns a callable ``(vector, sign) -> bool``: True means "might qualify,
+    build the element and check exactly".  Everything here is double precision
+    on a precomputed embedding matrix -- no Sage elements, no high-precision
+    arithmetic.
+
+    Soundness comes from tolerances that always err towards *keeping* a vector:
+    a value too close to zero to sign reliably, or a norm too close to the
+    bound, is passed through to the exact test.  So the screen can waste work
+    but cannot discard a genuine s-indecomposable.
+    """
+    n = ctx.degree
+    embs = ctx.real_embeddings(53)
+    M = [[float(e(b)) for e in embs] for b in ctx.basis]
+    scale = max(abs(x) for row in M for x in row) or 1.0
+    zero_tol = 1e-9 * scale
+    slack = 1.0 + 1e-9
+    want = tuple(int(s) for s in signature)
+
+    def keep(v, sign):
+        vals = [sign * sum(float(c) * M[j][i] for j, c in enumerate(v))
+                for i in range(n)]
+        prod = 1.0
+        for i, x in enumerate(vals):
+            if abs(x) <= zero_tol:
+                return True                 # cannot sign it; let exact decide
+            if (x > 0) != (want[i] > 0):
+                return False
+            prod *= abs(x)
+        return prod <= norm_bound * slack
+
+    return keep
 
 
 # ---------------------------------------------------------------------------
@@ -132,13 +174,19 @@ def indecomposables_in_class(ctx, signature=None, bound=None, verify=True):
     norm_bound = abs(ZZ(bound if bound is not None else ctx.discriminant))
     embs = ctx.real_embeddings()
 
-    found = []
-    for x in candidates(ctx, t2_bound(ctx, norm_bound)):
-        for y in (x, -x):
-            vals = [embs[i](y) for i in range(n)]
-            if any(v == 0 for v in vals):
+    keep = _screen(ctx, norm_bound, signature)
+    found, screened, exact = [], 0, 0
+    for v in candidates(ctx, t2_bound(ctx, norm_bound)):
+        for sign in (1, -1):
+            screened += 1
+            if not keep(v, sign):
                 continue
-            if tuple(1 if v > 0 else -1 for v in vals) != signature:
+            exact += 1
+            y = ctx.from_coordinates([sign * c for c in v])
+            vals = [embs[i](y) for i in range(n)]
+            if any(v_ == 0 for v_ in vals):
+                continue
+            if tuple(1 if v_ > 0 else -1 for v_ in vals) != signature:
                 continue
             if abs(ZZ(y.norm())) > norm_bound:
                 continue
@@ -148,6 +196,9 @@ def indecomposables_in_class(ctx, signature=None, bound=None, verify=True):
                     found.append((y, on_sail, reason))
             elif is_indecomposable(y, ctx, signature, verify=verify):
                 found.append((y, is_on_sail_general(y, ctx), "box_exhausted"))
+    logger.info("%s signature %s: screened %s, examined %s exactly (%.2f%%)",
+                ctx.label or ctx.K, signature, screened, exact,
+                100.0 * exact / max(screened, 1))
 
     canon = ctx.normalizer
     seen = {}
