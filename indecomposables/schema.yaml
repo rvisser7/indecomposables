@@ -101,10 +101,7 @@ signature_classes:
   long_doc: >-
     Canonical representatives are the numerically smallest bitmask in each coset, listed ascending, so index 0 is always the totally positive class and every representative begins with +. The embeddings sigma_1 ... sigma_n are ordered by increasing sigma_i(a), where a is the root of the LMFDB defining polynomial.
 
-signature_masks:
-  type: smallint[]
-  files: [full]
-  short_doc: 'the same classes as bitmasks (+ -> 0, - -> 1, sigma_1 most significant), ascending'
+
 
 num_signature_classes:
   type: smallint
@@ -123,79 +120,17 @@ totally_positive_unit_index:
 # INDECOMPOSABLES INFO !
 # --------------------------
 
+# technically don't need this, as this is just num_indecomposables_all[0]
 num_indecomposables_tp:
     type: integer
-    files: [mini, full]
+    files: []
     short_doc: 'number of indecomposables up to multiplication by totally positive units.'
     long_doc: "Number of totally positive indecomposables, up to multiplication by U^+.  This is the same as num_indecomposables_all[0]"
 
 num_indecomposables_all:
     type: integer[]
     files: [mini, full]
-    short_doc: 'number of indecomposables in each signature s, up to multiplication by totally positive units'
-
-num_on_sail:
-  type: integer
-  files: [mini, full]
-  short_doc: 'how many of the indecomposables lie on the sail; equals num_indecomposables_tp when n = 2'
-  long_doc: >-
-    Every lattice point on the sail is indecomposable, but for degree at least 3 the converse fails, so this can be strictly smaller than num_indecomposables_tp. The size of the gap is one of the things this database is for.
-
-min_norm_indecomposable:
-  type: numeric
-  files: [mini, full]
-  short_doc: 'smallest norm of a non-unit indecomposable, NULL if there is none'
-  long_doc: >-
-      NULL when the only indecomposables are units, which happens for instance for Q(sqrt 5).
-
-max_norm_indecomposable:
-  type: numeric
-  files: [mini, full]
-  short_doc: 'largest norm of an indecomposable'
-  long_doc: >-
-      Bounded above by |disc| in general (Kala-Yatsyna), and by disc/4 in degree 2 (Dress-Scharlau).
-
-min_trace_indecomposable:
-  type: numeric
-  files: [mini, full]
-  short_doc: 'smallest trace among the canonical representatives'
-
-max_trace_indecomposable:
-  type: numeric
-  files: [mini, full]
-  short_doc: 'largest trace among the canonical representatives'
-
-min_norm_decomposable:
-  type: numeric
-  files: [mini, full]
-  short_doc: 'smallest norm of a decomposable in O_K^+ not lying in m O_K^+ for some m >= 2'
-
-min_norm_all_signatures:
-  type: numeric
-  files: [mini, full]
-  short_doc: 'least k such that every signature class contains an element of absolute norm <= k'
-
-min_norm_fprimea_signature:
-  type: numeric
-  files: [mini, full]
-  short_doc: 'smallest absolute norm in the signature class containing f''(a)'
-
-num_indecomposables_total:
-  type: integer
-  files: [mini, full]
-  short_doc: 'total number of s-indecomposables summed over all signature classes'
-
-# ---------------------------------
-# -SAIL DATABASE !
-# --------------------------------
-
-num_sail_facets:
-  type: integer
-  files: [mini, full]
-  short_doc: 'facets of the totally positive sail'
-
-
-
+    short_doc: 'number of s-indecomposables in each signature s, up to multiplication by totally positive units'
 
 indecomposables_all:
   type: jsonb
@@ -224,6 +159,82 @@ indecomposables_traces:
   files: [full]
   short_doc: 'traces, same order'
 
+min_norm_indecomposable:
+  type: numeric[]
+  files: [mini, full]
+  short_doc: 'smallest norm of a non-unit s-indecomposable, NULL if there is none'
+  long_doc: >-
+      NULL when the only indecomposables are units, which happens for instance for Q(sqrt 5).
+
+max_norm_indecomposable:
+  type: numeric[]
+  files: [mini, full]
+  short_doc: 'largest norm of an s-indecomposable'
+  long_doc: >-
+      Bounded above by |disc| in general (Kala-Yatsyna), and by disc/4 in degree 2 (Dress-Scharlau).
+
+min_trace_indecomposable:
+  type: numeric[]
+  files: [mini, full]
+  short_doc: 'smallest trace of an s-indecomposable among the canonical representatives'
+
+max_trace_indecomposable:
+  type: numeric[]
+  files: [mini, full]
+  short_doc: 'largest trace of an s-indecomposable among the canonical representatives'
+
+min_norm_decomposable:
+  type: numeric[]
+  files: [mini, full]
+  short_doc: 'smallest norm of an s-decomposable in O^s not lying in m O^s for some m >= 2'
+
+min_norm_all_signatures:
+  type: numeric
+  files: [mini, full]
+  short_doc: 'least k such that every signature class contains an element of absolute norm <= k'
+
+min_norm_fprimea_signature:
+  type: numeric
+  files: [mini, full]
+  short_doc: 'smallest absolute norm in the signature class containing f''(a)'
+
+codifferent_traces:
+  type: numeric[]
+  files: []
+  short_doc: 'for each indecomposable, the least Tr(lambda alpha) over totally positive lambda in the codifferent'
+  long_doc: >-
+      Equals 1 exactly when alpha lies on the sail, so this is a graded refinement of indecomposables_on_sail. Known to be 1 throughout for real quadratic fields and at most 2 for simplest cubics, and Kala-Tinkova show it can be arbitrarily large in other families; its distribution is not known.
+
+max_codifferent_trace:
+  type: smallint
+  files: []
+  short_doc: 'largest entry of codifferent_traces'
+  long_doc: >-
+      Equal to 1 exactly when every indecomposable lies on the sail, so it is a scalar version of num_on_sail == num_indecomposables_tp that can be filtered on directly.
+
+
+# probably don't need this?
+num_indecomposables_total:
+  type: integer
+  files: []
+  short_doc: 'total number of s-indecomposables summed over all signature classes'
+
+# ---------------------------------
+# -SAIL DATABASE !
+# --------------------------------
+
+num_on_sail:
+  type: integer[]
+  files: [mini, full]
+  short_doc: 'how many of the s-indecomposables lie on the s-sail; equals num_indecomposables_all when n = 2'
+  long_doc: >-
+    Every lattice point on the sail is indecomposable, but for degree at least 3 the converse fails, so this can be strictly smaller than num_indecomposables_tp. The size of the gap is one of the things this database is for.
+
+num_sail_facets:
+  type: integer[]
+  files: [mini, full]
+  short_doc: 'facets of the totally positive sail'
+
 indecomposables_on_sail:
   type: smallint[]
   files: [full]
@@ -251,27 +262,8 @@ sail_complete_by_signature:
   files: [full]
   short_doc: '0/1 completeness certificate per signature class'
 
-  # ---- reserved: declared but written to no file (files: []) ------------
-  # Kept here so the names, types and definitions are settled before any data
-  # is published.  Add `mini` or `full` to `files` to start emitting one; no
-  # other change is needed.
-
-codifferent_traces:
-  type: numeric[]
-  files: []
-  short_doc: 'for each indecomposable, the least Tr(lambda alpha) over totally positive lambda in the codifferent'
-  long_doc: >-
-      Equals 1 exactly when alpha lies on the sail, so this is a graded refinement of indecomposables_on_sail. Known to be 1 throughout for real quadratic fields and at most 2 for simplest cubics, and Kala-Tinkova show it can be arbitrarily large in other families; its distribution is not known.
-
-max_codifferent_trace:
-  type: smallint
-  files: []
-  short_doc: 'largest entry of codifferent_traces'
-  long_doc: >-
-      Equal to 1 exactly when every indecomposable lies on the sail, so it is a scalar version of num_on_sail == num_indecomposables_tp that can be filtered on directly.
-
 num_sail_vertices:
-  type: integer
+  type: integer[]
   files: []
   short_doc: 'extreme points of the sail, as opposed to all lattice points on it'
   long_doc: >-
@@ -290,6 +282,12 @@ max_norm_by_signature:
 # ------------------------------------------------------------
 # Miscellenaous stuff (not sure if we're including this?)
 # ----------------------------------------------------------
+
+# technically, dont need this, as we're already storing "signture_classes"
+signature_masks:
+  type: smallint[]
+  files: []
+  short_doc: 'the same classes as bitmasks (+ -> 0, - -> 1, sigma_1 most significant), ascending'
 
 family:
   type: text
