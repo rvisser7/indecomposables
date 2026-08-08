@@ -52,7 +52,8 @@ def register(name, priority=0, complete=True):
     """
     def deco(applies):
         _REGISTRY.append({"name": name, "priority": priority,
-                          "complete": complete, "applies": applies})
+                          "complete": complete, "applies": applies,
+                          "unavailable": None})
         _REGISTRY.sort(key=lambda e: -e["priority"])
         return applies
     return deco
@@ -64,22 +65,36 @@ def applicable_algorithms(ctx, complete_only=False):
 
     An entry whose module will not import is skipped rather than allowed to
     propagate: a specialised family being unavailable must not stop a field from
-    being computed by brute force.  It is logged at WARNING because the cost is
-    real -- silently losing a fast path means the run is far slower than it
-    looks -- but it is a performance problem, not a correctness one.
+    being computed by brute force.  Losing a fast path is a performance problem,
+    not a correctness one -- the fallback is the exhaustive method.
+
+    Unavailability is reported **once per algorithm per process**, not once per
+    call.  It is a fixed fact about the installation, so repeating it for every
+    field and every signature class would bury the actual results.
     """
     out = []
     for entry in _REGISTRY:
         if complete_only and not entry["complete"]:
             continue
+        if entry["unavailable"] is not None:
+            continue
         try:
             fn = entry["applies"](ctx)
-        except (ImportError, NotImplementedError) as exc:
-            logger.warning("algorithm %r unavailable, skipping: %s", entry["name"], exc)
+        except (ImportError, NotImplementedError, AttributeError) as exc:
+            entry["unavailable"] = str(exc) or type(exc).__name__
+            logger.warning(
+                "algorithm %r is not available and will be skipped for the rest "
+                "of this run; falling back to the exhaustive method. (%s)",
+                entry["name"], entry["unavailable"])
             continue
         if fn is not None:
             out.append((entry["name"], fn))
     return out
+
+
+def unavailable_algorithms():
+    """``{name: reason}`` for algorithms found unavailable during this run."""
+    return {e["name"]: e["unavailable"] for e in _REGISTRY if e["unavailable"]}
 
 
 def best_algorithm(ctx):
