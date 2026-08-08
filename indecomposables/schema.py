@@ -54,7 +54,7 @@ from typing import Any, Callable
 import yaml
 
 __all__ = [
-    "Column", "COLUMNS", "SCALAR_CODECS", "codec_for", "reserved", "load", "MINI", "FULL", "STATUSES",
+    "Column", "COLUMNS", "SCALAR_CODECS", "codec_for", "pg_type_for", "parse_type", "reserved", "load", "MINI", "FULL", "STATUSES",
     "columns", "header_lines", "encode_row", "decode_row", "project",
     "docs_table", "create_table_sql", "NULL", "SEP", "SchemaError",
 ]
@@ -152,6 +152,7 @@ INT = (_enc_int, int)
 FLOAT = (_enc_float, float)
 ARRAY1 = _array(1)
 ARRAY2 = _array(2)
+ARRAY3 = _array(3)
 TEXT_ARRAY = (lambda v: "{" + ",".join(_enc_text(t) for t in v) + "}",
               lambda s: tuple(_split_braces(s)))
 
@@ -163,7 +164,9 @@ TEXT_ARRAY = (lambda v: "{" + ",".join(_enc_text(t) for t in v) + "}",
 @dataclass(frozen=True)
 class Column:
     name: str
-    pg_type: str
+    declared_type: str             # logical: element type plus nesting depth
+    jagged: bool                   # ragged nesting, so stored as jsonb
+    pg_type: str                   # derived: what goes in the file preamble
     files: frozenset               # subset of {MINI, FULL}; empty means reserved
     doc: str                       # short_doc: the one-line description
     codec: tuple = _field(repr=False)
@@ -206,33 +209,55 @@ SCHEMA_FILE = Path(__file__).with_name("schema.yaml")
 NOT_NULL = ("lmfdb_label",)
 
 
-def codec_for(pg_type):
-    """
-    Derive the codec from the declared Postgres type.
+ARRAY_CODECS = {1: ARRAY1, 2: ARRAY2, 3: ARRAY3}
 
-    Array dimension has to be written into the type -- Postgres calls both a 1-D
-    and a 2-D array ``numeric[]``, so the type alone would not say how deeply to
-    nest.  It accepts a multi-dimensional declaration and ignores the extra
-    dimensions, so ``numeric[][]`` is valid DDL and records what we need.
+
+def parse_type(declared):
     """
-    base, dims = pg_type, 0
+    Split a declared type into ``(element type, nesting depth)``.
+
+    ``type`` is a *logical* description: the element type plus how deeply it is
+    nested.  ``numeric[][]`` means a 2-D array of numbers whether or not
+    Postgres can store it that way; :func:`pg_type_for` decides that.
+    """
+    base, dims = str(declared).strip(), 0
     while base.endswith("[]"):
         base, dims = base[:-2].strip(), dims + 1
+    if base not in SCALAR_CODECS:
+        raise SchemaError(
+            f"unknown element type {base!r} in {declared!r}; known types are "
+            f"{', '.join(sorted(SCALAR_CODECS))}")
+    if dims > 3:
+        raise SchemaError(f"{declared!r}: nesting deeper than three is not supported")
+    if dims and SCALAR_CODECS[base] is not INT:
+        raise SchemaError(f"{declared!r}: only integer element types can be nested")
+    return base, dims
+
+
+def pg_type_for(declared, jagged=False):
+    """
+    The type written into the data file preamble and ``CREATE TABLE``.
+
+    A **jagged** nested column becomes ``jsonb``: Postgres array literals must be
+    rectangular, so ``{{1,2},{3,4,5}}`` is rejected on COPY even though the
+    ``CREATE TABLE`` would have been accepted.  A rectangular one keeps its array
+    type -- Postgres accepts a multi-dimensional declaration and ignores the
+    extra dimensions, so ``numeric[][]`` is valid DDL.
+    """
+    base, dims = parse_type(declared)
     if dims == 0:
-        if base not in SCALAR_CODECS:
-            raise SchemaError(
-                f"unknown type {pg_type!r}; known types are "
-                f"{', '.join(sorted(SCALAR_CODECS))}, optionally with [] or [][]")
+        return base
+    return "jsonb" if jagged else f"{base}{'[]' * dims}"
+
+
+def codec_for(declared, jagged=False):
+    """JSON for a jagged column, otherwise the array codec of the right depth."""
+    base, dims = parse_type(declared)
+    if dims == 0:
         return SCALAR_CODECS[base]
-    if base not in SCALAR_CODECS or SCALAR_CODECS[base] is not INT:
-        raise SchemaError(f"{pg_type!r}: only integer arrays are supported; "
-                          "use jsonb for anything else")
-    if dims == 1:
-        return ARRAY1
-    if dims == 2:
-        return ARRAY2
-    raise SchemaError(f"{pg_type!r}: arrays deeper than two dimensions must be "
-                      "jsonb, since jagged nesting cannot be a Postgres array")
+    if jagged:
+        return JSON
+    return ARRAY_CODECS[dims]
 
 
 def _files(name, spec):
@@ -271,7 +296,15 @@ def _validate(name, spec):
     for key in ("type", "short_doc"):
         if not spec.get(key):
             raise SchemaError(f"{where}: missing required key {key!r}")
-    unknown = set(spec) - {"type", "files", "short_doc", "long_doc"}
+    _, dims = parse_type(spec["type"])
+    if spec.get("jagged") and dims == 0:
+        raise SchemaError(f"{where}: 'jagged' only makes sense for a nested type")
+    if dims == 3 and not spec.get("jagged"):
+        raise SchemaError(
+            f"{where}: a three-deep column must be declared jagged, since a "
+            "rectangular three-dimensional Postgres array is not something we "
+            "produce; add `jagged: true`")
+    unknown = set(spec) - {"type", "files", "short_doc", "long_doc", "jagged"}
     if unknown:
         raise SchemaError(
             f"{where}: unknown key(s) {sorted(unknown)}; "
@@ -295,13 +328,15 @@ def load(path=None):
     cols = []
     for name, spec in doc.items():
         _validate(name, spec)
-        pg = str(spec["type"]).strip()
+        declared = str(spec["type"]).strip()
+        jagged = bool(spec.get("jagged", False))
         cols.append(Column(
-            name=name, pg_type=pg,
+            name=name, declared_type=declared, jagged=jagged,
+            pg_type=pg_type_for(declared, jagged),
             files=_files(name, spec),
             doc=" ".join(str(spec["short_doc"]).split()),
             long_doc=" ".join(str(spec.get("long_doc", "")).split()) or None,
-            codec=codec_for(pg),
+            codec=codec_for(declared, jagged),
             nullable=name not in NOT_NULL))
     if not cols:
         raise SchemaError(f"{path}: no columns declared")
@@ -344,6 +379,37 @@ def header_lines(tier: str) -> list:
             ""]
 
 
+def _shape(v, limit=3):
+    """A short description of a value's nesting, for error messages."""
+    depth, probe = 0, v
+    while isinstance(probe, (list, tuple)) and depth < limit + 1:
+        if not probe:
+            return f"{'list of ' * depth}empty list"
+        probe = probe[0]
+        depth += 1
+    return f"{'list of ' * depth}{type(probe).__name__}"
+
+
+def _require_rectangular(col, v):
+    """
+    Reject ragged data in a column not declared ``jagged``.
+
+    Postgres refuses ``{{1,2},{3,4,5}}`` on COPY even though the CREATE TABLE
+    was accepted, so without this the file would be written happily and fail
+    only at load time -- a long way from the cause.  ``jsonb`` columns skip the
+    check, which is exactly what ``jagged: true`` buys.
+    """
+    _, dims = parse_type(col.declared_type)
+    if dims < 2 or v is None:
+        return
+    lengths = {len(row) for row in v if isinstance(row, (list, tuple))}
+    if len(lengths) > 1:
+        raise SchemaError(
+            f"column {col.name!r} is declared {col.declared_type!r} but the data "
+            f"is ragged (row lengths {sorted(lengths)}). A Postgres array must be "
+            "rectangular; add `jagged: true` to store it as jsonb.")
+
+
 def encode_row(record, tier: str) -> str:
     out = []
     for c in columns(tier):
@@ -352,8 +418,23 @@ def encode_row(record, tier: str) -> str:
             if not c.nullable:
                 raise SchemaError(f"column {c.name!r} may not be NULL")
             out.append(NULL)
-        else:
+            continue
+        try:
+            if not c.jagged:
+                _require_rectangular(c, v)
             out.append(c.encode(v))
+        except SchemaError:
+            raise
+        except (TypeError, ValueError) as exc:
+            # A bare TypeError from inside a codec gives no hint which column
+            # is wrong.  Usually the producer and schema.yaml disagree about a
+            # column's nesting -- for instance a per-signature column declared
+            # as a two-deep array while the code emits three levels.
+            raise SchemaError(
+                f"column {c.name!r} declared as {c.pg_type!r} but got "
+                f"{_shape(v)}: {exc}. If these disagree, the code and "
+                "schema.yaml are out of sync -- check the column's `type`."
+            ) from exc
     return SEP.join(out)
 
 
