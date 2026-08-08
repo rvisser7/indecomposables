@@ -238,7 +238,7 @@ num_indecomposables_on_sail:
 num_sail_facets:
   type: integer[]
   files: [full]
-  short_doc: 'facets of the totally positive sail'
+  short_doc: 'number of facets of the s-sail, in signature s.'
 
 indecomposables_on_sail:
   type: smallint[][]
@@ -259,11 +259,6 @@ sail_facet_vertices:
   jagged: true
   files: [full]
   short_doc: 'per signature class, per facet, indices into indecomposables_all of that class; indices rather than coordinates so the two cannot disagree'
-
-num_sail_facets_by_signature:
-  type: integer[]
-  files: [full]
-  short_doc: 'facet count per signature class'
 
 num_sail_vertices:
   type: integer[]
