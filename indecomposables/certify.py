@@ -47,7 +47,7 @@ from .normalize import _enumerate_close
 
 __all__ = [
     "decomposition_witness", "is_indecomposable", "codifferent_certificate",
-    "is_on_sail", "classify", "minimality_witness", "is_minimal",
+    "is_on_sail", "classify",
 ]
 
 #: Refuse to enumerate more than this many candidates before failing loudly.
@@ -57,6 +57,36 @@ MAX_CANDIDATES = 500000
 # ---------------------------------------------------------------------------
 # Lattice points in a box
 # ---------------------------------------------------------------------------
+
+def _solve_spd(G, rhs):
+    """
+    Solve ``G y = rhs`` for symmetric positive definite ``G``, by Cholesky.
+
+    Written out rather than delegated because Sage's linear algebra over
+    ``RealField(prec)`` is patchy -- ``gram_schmidt`` is simply unimplemented
+    there -- and dropping to ``RDF`` would cap the working precision at 53 bits.
+    """
+    n = G.nrows()
+    R = G.base_ring()
+    L = [[R(0)] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(i + 1):
+            acc = G[i][j] - sum(L[i][k] * L[j][k] for k in range(j))
+            if i == j:
+                if acc <= 0:
+                    raise ValueError(
+                        "Gram matrix is not positive definite at this precision")
+                L[i][i] = acc.sqrt()
+            else:
+                L[i][j] = acc / L[j][j]
+    # forward then back substitution
+    z = [R(0)] * n
+    for i in range(n):
+        z[i] = (rhs[i] - sum(L[i][k] * z[k] for k in range(i))) / L[i][i]
+    y = [R(0)] * n
+    for i in reversed(range(n)):
+        y[i] = (z[i] - sum(L[k][i] * y[k] for k in range(i + 1, n))) / L[i][i]
+    return vector(R, y)
 
 def _box_points(basis, uppers, ctx, prec, signs=None, cap=MAX_CANDIDATES):
     """
@@ -84,7 +114,10 @@ def _box_points(basis, uppers, ctx, prec, signs=None, cap=MAX_CANDIDATES):
                     for e, u, s in zip(embs, uppers, signs)] for b in basis])
     G = M * M.transpose()
     centre = vector(R, [R(1) / 2] * n)
-    y = G.solve_right(M * centre)
+    # G is symmetric positive definite, so a Cholesky solve works and avoids
+    # relying on Sage's generic solver over an inexact ring -- the same class of
+    # gap as `gram_schmidt`, which is unimplemented for RealField.
+    y = _solve_spd(G, M * centre)
     rho = R(n).sqrt() / 2 * R(1.001) + R(2) ** (-prec // 4)
 
     return _enumerate_close(G, y, rho ** 2, len(basis), cap)
@@ -94,17 +127,23 @@ def _box_points(basis, uppers, ctx, prec, signs=None, cap=MAX_CANDIDATES):
 # Decomposability
 # ---------------------------------------------------------------------------
 
-def minimality_witness(x, ctx, signature=None, prec=None):
+def decomposition_witness(x, ctx, signature=None, prec=None):
     """
-    A ``beta`` in the same signature class with ``|sigma_i(beta)| < |sigma_i(x)|``
-    for every ``i``, or ``None``.
+    A ``beta`` in the same signature class with ``x = beta + gamma``, or ``None``.
 
-    For the totally positive class this is exactly a decomposition: the
-    condition reads ``0 < beta < x``, so ``x = beta + (x - beta)`` with both
-    summands totally positive.  For other classes ``S_sigma`` is not closed
-    under addition, so no decomposition is implied and the right word is
-    *minimal* rather than *indecomposable* -- but the geometry, and hence the
-    computation, is identical.
+    ``x`` in the signature class ``S_s`` is **s-indecomposable** when it is not a
+    sum of two elements of ``S_s``.  Each ``S_s`` is the lattice intersected with
+    an open orthant, hence closed under addition, so this is the same notion in
+    every class; for ``s`` totally positive it is ordinary indecomposability.
+
+    The search uses the equivalent geometric form -- some ``beta`` in ``S_s``
+    with ``|sigma_i(beta)| < |sigma_i(x)|`` for every ``i`` -- because that is a
+    box.  The two agree: a decomposition gives
+    ``|sigma_i(x)| = |sigma_i(beta)| + |sigma_i(gamma)| > |sigma_i(beta)|``, and
+    conversely ``gamma = x - beta`` keeps every sign ``s_i`` and is nonzero.
+
+    A returned witness is exact and needs no further checking: both it and
+    ``x - beta`` are verified to lie in ``S_s`` before it is handed back.
     """
     K = ctx.K
     x = K(x)
@@ -128,42 +167,7 @@ def minimality_witness(x, ctx, signature=None, prec=None):
     return None
 
 
-def is_minimal(x, ctx, signature=None, verify=True):
-    """Whether ``x`` is minimal in its signature class."""
-    if minimality_witness(x, ctx, signature, ctx.prec) is not None:
-        return False
-    if verify and minimality_witness(x, ctx, signature, 2 * ctx.prec) is not None:
-        return False
-    return True
-
-
-def decomposition_witness(x, ctx, prec=None):
-    """
-    A ``beta`` with ``0 < beta < x``, or ``None`` if the search found none.
-
-    A returned witness is exact and needs no further checking: it is verified
-    with :meth:`is_totally_positive` before being handed back.  A ``None`` is
-    only as complete as the working precision, which is why
-    :func:`is_indecomposable`, not this function, is the public test.
-    """
-    K = ctx.K
-    x = K(x)
-    if not x.is_totally_positive():
-        raise ValueError(f"{x} is not totally positive")
-    prec = prec or ctx.prec
-
-    embs = ctx.real_embeddings(prec)
-    uppers = [embs[i](x) for i in range(ctx.degree)]
-    for a in _box_points(ctx.basis, uppers, ctx, prec):
-        beta = ctx.from_coordinates(a)
-        if beta.is_zero() or beta == x:
-            continue
-        if beta.is_totally_positive() and (x - beta).is_totally_positive():
-            return beta
-    return None
-
-
-def is_indecomposable(x, ctx, verify=True, use_norm_bound=True):
+def is_indecomposable(x, ctx, signature=None, verify=True, use_norm_bound=True):
     """
     Whether ``x`` is indecomposable.
 
@@ -181,18 +185,19 @@ def is_indecomposable(x, ctx, verify=True, use_norm_bound=True):
     """
     K = ctx.K
     x = K(x)
-    if not x.is_totally_positive():
-        raise ValueError(f"{x} is not totally positive")
+    totally_positive = signature is None or all(s > 0 for s in signature)
 
-    if use_norm_bound and abs(ZZ(x.norm())) > abs(ctx.discriminant):
+    if totally_positive:
+        # Two cheap sufficient tests, available only in the totally positive
+        # class: the Kala-Yatsyna norm bound, and a codifferent certificate.
+        if use_norm_bound and abs(ZZ(x.norm())) > abs(ctx.discriminant):
+            return False
+        if codifferent_certificate(x, ctx) is not None:
+            return True
+
+    if decomposition_witness(x, ctx, signature, ctx.prec) is not None:
         return False
-
-    if codifferent_certificate(x, ctx) is not None:
-        return True
-
-    if decomposition_witness(x, ctx, ctx.prec) is not None:
-        return False
-    if verify and decomposition_witness(x, ctx, 2 * ctx.prec) is not None:
+    if verify and decomposition_witness(x, ctx, signature, 2 * ctx.prec) is not None:
         return False
     return True
 
@@ -268,9 +273,9 @@ def classify(x, ctx, verify=True):
     if lam is not None:
         return True, True, "codifferent", lam
 
-    beta = decomposition_witness(x, ctx, ctx.prec)
+    beta = decomposition_witness(x, ctx, None, ctx.prec)
     if beta is None and verify:
-        beta = decomposition_witness(x, ctx, 2 * ctx.prec)
+        beta = decomposition_witness(x, ctx, None, 2 * ctx.prec)
     if beta is not None:
         return False, False, "box_witness", beta
     return True, False, "box_exhausted", None
