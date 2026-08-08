@@ -131,9 +131,8 @@ def compute_record(ctx, verify=True):
     norms = [[int(abs(ZZ(ctx.K(y).norm()))) for y, _, _ in cls] for cls in results]
     sail = [[1 if on else 0 for _, on, _ in cls] for cls in results]
 
-    tp_coords, tp_norms, tp_sail = coords[0], norms[0], sail[0]
-    tp_traces = [int(ZZ(ctx.K(y).trace())) for y, _, _ in results[0]]
-    non_unit = [n for n in tp_norms if n != 1]
+    traces = [[int(ZZ(ctx.K(y).trace())) for y, _, _ in cls] for cls in results]
+    nonunit = [[n for n in cls if n != 1] for cls in norms]
 
     rec.update({
         "unit_signature_rank": int(ctx.unit_signature_rank),
@@ -143,26 +142,20 @@ def compute_record(ctx, verify=True):
                               for u in ctx.fundamental_units],
         "positive_unit_basis": [[int(t) for t in ctx.coordinates(u)]
                                 for u in ctx.totally_positive_unit_basis],
+        "signature_classes": [[int(s) for s in sig] for sig in sigs],
 
-        "signatures": [[int(s) for s in sig] for sig in sigs],
-        "signature_masks": [int(m) for m in masks],
-        "num_minimal_by_signature": [len(c) for c in coords],
-        "minimal_by_signature": coords,
-        "minimal_norms_by_signature": norms,
-        "num_minimal_total": sum(len(c) for c in coords),
-
-        "indecomposables": tp_coords,
-        "indecomposables_norms": tp_norms,
-        "indecomposables_traces": tp_traces,
-        "indecomposables_on_sail": tp_sail,
-
-        "num_indecomposables": len(tp_coords),
-        "num_on_sail": sum(tp_sail),
-        "min_norm_indecomposable": min(non_unit) if non_unit else None,
-        "max_norm_indecomposable": max(tp_norms) if tp_norms else None,
-        "min_trace_indecomposable": min(tp_traces) if tp_traces else None,
-        "max_trace_indecomposable": max(tp_traces) if tp_traces else None,
-        "all_signatures_complete": not failures,
+        # Everything below is one entry per signature class, in the order given
+        # by signature_classes, with index 0 the totally positive one.
+        "num_indecomposables": [len(c) for c in coords],
+        "indecomposables": coords,
+        "indecomposables_norms": norms,
+        "indecomposables_traces": traces,
+        "indecomposables_on_sail": sail,
+        "min_norm_indecomposable": [min(c) if c else None for c in nonunit],
+        "max_norm_indecomposable": [max(c) if c else None for c in norms],
+        "min_trace_indecomposable": [min(c) if c else None for c in traces],
+        "max_trace_indecomposable": [max(c) if c else None for c in traces],
+        "num_on_sail": [sum(c) for c in sail],
     })
     _add_sail_columns(ctx, rec, sigs, results)
     return MappingProxyType(rec)
@@ -176,14 +169,14 @@ def _all_classes(ctx, verify):
     aborting the field: a row covering three of four classes is worth more than
     no row at all, and ``status = "partial"`` says exactly that.
     """
-    from .enumerate import minimal_elements
+    from .enumerate import indecomposables_in_class
     from .signatures import field_signature_classes
 
     masks, sigs = field_signature_classes(ctx)
     results, failures = [], []
     for sig in sigs:
         try:
-            results.append(minimal_elements(ctx, sig, verify=verify))
+            results.append(indecomposables_in_class(ctx, sig, verify=verify))
         except Exception as exc:                       # noqa: BLE001 - recorded
             logger.warning("%s signature %s failed: %s", ctx.label, sig, exc)
             failures.append(f"signature {tuple(sig)}: {type(exc).__name__}")
@@ -195,7 +188,7 @@ def _add_sail_columns(ctx, rec, sigs, results):
     """
     Facet data, when :mod:`indecomposables.sail` is available.
 
-    Vertices are stored as **indices into** ``minimal_by_signature`` rather than
+    Vertices are stored as **indices into** ``indecomposables_all`` rather than
     repeated coordinates: half the size, and the sail columns then cannot
     disagree with the element columns about what a vertex is.
     """
