@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import logging
 import multiprocessing as mp
 import os
 import queue
@@ -226,6 +227,12 @@ def worker(slot, work_q, status_q, heartbeat, stop, args):
     fails = base / "failures.txt"
     signal.signal(signal.SIGALRM, _alarm)
     signal.signal(signal.SIGINT, signal.SIG_IGN)      # parent owns Ctrl-C
+
+    # Facts about the installation -- an unported family, a missing optional
+    # dependency -- are reported once per process, so with several dozen workers
+    # they would still arrive several dozen times.  Let slot 0 do the talking.
+    if slot != 0:
+        logging.getLogger("indecomposables").setLevel(logging.ERROR)
 
     with shard.open("a", buffering=1) as out, fails.open("a", buffering=1) as bad:
         while not stop.is_set():
