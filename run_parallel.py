@@ -494,6 +494,17 @@ def main(argv=None):
     if done < len(items):
         print(f"\n{len(items) - done} field(s) not reached; re-run the same "
               "command to resume.")
+
+    # The shards are working files.  data/ is produced by the merge, and it is
+    # easy to finish a long run and wonder where the output went.
+    shards = sorted(work_dir.glob(SHARD_GLOB))
+    rows = sum(sum(1 for line in p.read_text().splitlines() if line.strip())
+               for p in shards)
+    if rows:
+        print(f"\n{rows} row(s) in {work_dir}/.  These are working files; to "
+              "publish them run:")
+        print(f"    python scripts/merge_shards.py --degree {args.degree}")
+        print(f"    python scripts/validate_data.py --degree {args.degree}")
     return 0
 
 
