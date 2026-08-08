@@ -1,0 +1,2 @@
+lmfdb_index|coeffs|monogenic
+1|0|1
