@@ -21,6 +21,21 @@ from indecomposables.certify import (                     # noqa: E402
     is_indecomposable, is_on_sail,
 )
 
+
+def report(failures, context):
+    """
+    Fail once, listing everything that went wrong.
+
+    These tests loop over hundreds of elements.  Asserting inside the loop stops
+    at the first bad one, which tells you nothing about whether it is an isolated
+    case or the whole field -- and that distinction is usually the diagnosis.
+    """
+    if failures:
+        head = "\n".join(f"    {f}" for f in failures[:15])
+        more = f"\n    ... and {len(failures) - 15} more" if len(failures) > 15 else ""
+        raise AssertionError(
+            f"{context}: {len(failures)} mismatch(es)\n{head}{more}")
+
 R = PolynomialRing(QQ, "x")
 x = R.gen()
 
@@ -105,9 +120,21 @@ def test_agrees_with_exhaustive_search(D):
     ctx = _ctx(D)
     sample = _totally_positive_sample(ctx, trace_max=30)
     lookup = set(sample)
+    failures = []
     for y in sample:
+        # Brute force over this sample is *exact*, because the sample is closed
+        # downwards: if beta < y then beta is totally positive with
+        # Tr(beta) < Tr(y) <= trace_max, so beta is in the sample too.  Hence
+        # the comparison is an equality rather than a one-sided implication, and
+        # a missed indecomposable is caught as well as a spurious one.
         brute = any((y - z).is_totally_positive() for z in lookup if z != y)
-        assert is_indecomposable(y, ctx) != brute or not brute
+        got = is_indecomposable(y, ctx, use_norm_bound=False)
+        if got != (not brute):
+            failures.append(
+                f"{y}  (norm {ZZ(y.norm())}, trace {ZZ(y.trace())}): "
+                f"code says {'indecomposable' if got else 'decomposable'}, "
+                f"exhaustive says {'decomposable' if brute else 'indecomposable'}")
+    report(failures, f"Q(sqrt {D}), {len(sample)} elements of trace <= 30")
 
 
 def test_one_is_always_indecomposable(cubic):
@@ -151,10 +178,17 @@ def test_degree_two_sail_equals_indecomposable(D):
 def test_quadratic_indecomposable_norms(D, expected):
     ctx = _ctx(D)
     sample = _totally_positive_sample(ctx, trace_max=60)
-    norms = {ZZ(y.norm()) for y in sample if is_indecomposable(y, ctx)}
+    found = {}
+    for y in sample:
+        if is_indecomposable(y, ctx):
+            found.setdefault(ZZ(y.norm()), y)
+    norms = set(found)
+    detail = "  ".join(f"{n}:{found[n]}" for n in sorted(norms))
     assert norms == expected, (
-        f"sampled {len(sample)} totally positive elements of trace <= 60 "
-        f"in a coordinate box of {_coordinate_box(ctx, 60)}")
+        f"Q(sqrt {D}): got norms {sorted(norms)}, expected {sorted(expected)}\n"
+        f"    sampled {len(sample)} elements of trace <= 60, "
+        f"coordinate box {_coordinate_box(ctx, 60)}\n"
+        f"    witnesses: {detail}")
 
 
 @pytest.mark.parametrize("D", sorted(QUADRATIC_NORMS))
@@ -170,6 +204,31 @@ def test_dress_scharlau_norm_bound(D):
 # ---------------------------------------------------------------------------
 # classify() bookkeeping
 # ---------------------------------------------------------------------------
+
+def test_covering_radius_is_a_real_bound(cubic):
+    """
+    Babai's bound must actually bound: every log vector of a totally positive
+    unit, reduced against the lattice, has to land within rho of the origin.
+
+    This is the value that sits in the exponent of the search bound, so an
+    error here silently truncates the enumeration rather than raising.
+    """
+    rho = cubic.log_unit_covering_radius
+    assert rho > 0
+    B = cubic.log_unit_lattice
+    for row in B.rows():
+        assert row.norm() > 0
+    # the bound is at least half the longest reduced basis vector
+    assert rho >= max(row.norm() for row in B.rows()) / 2 * 0.999
+
+
+def test_trace_bound_exceeds_every_result(cubic):
+    """Nothing found may exceed the bound used to find it."""
+    from indecomposables.enumerate import indecomposables_exhaustive
+    embs = cubic.real_embeddings()
+    for y, _ in indecomposables_exhaustive(cubic):
+        assert sum(embs[i](y) for i in range(cubic.degree)) <= cubic.trace_bound
+
 
 def test_classify_reasons_are_consistent(cubic):
     seen = set()
@@ -201,22 +260,24 @@ def test_precision_does_not_change_the_answer(cubic):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("D", [5, 2, 13, 6])
-def test_minimality_generalises_decomposability(D):
-    """
-    On the totally positive class, minimal and indecomposable must coincide --
-    the box condition |sigma_i(beta)| < |sigma_i(alpha)| reads 0 < beta < alpha
-    there.
-    """
-    from indecomposables.certify import is_minimal
+def test_signature_argument_defaults_to_totally_positive(D):
+    """Passing the all-plus signature explicitly must change nothing."""
     ctx = _ctx(D)
+    plus = tuple([1] * ctx.degree)
     for y in _totally_positive_sample(ctx):
-        assert is_minimal(y, ctx) == is_indecomposable(y, ctx, use_norm_bound=False)
+        assert (is_indecomposable(y, ctx, plus, use_norm_bound=False)
+                == is_indecomposable(y, ctx, use_norm_bound=False))
 
 
 @pytest.mark.parametrize("D", [5, 2, 13])
-def test_minimality_in_every_signature_class(D):
-    """The signed box test against a direct scan, in each class separately."""
-    from indecomposables.certify import is_minimal
+def test_s_indecomposability_in_every_signature_class(D):
+    """
+    The signed box test against a direct scan, in each class separately.
+
+    Brute force here uses the *definition* -- is x a sum of two elements of the
+    same class -- while the code uses the equivalent box condition, so this
+    checks the equivalence as well as the implementation.
+    """
     ctx = _ctx(D)
     embs = ctx.real_embeddings()
     box = _coordinate_box(ctx, 40)
@@ -231,6 +292,11 @@ def test_minimality_in_every_signature_class(D):
 
     for sig, members in by_class.items():
         for y, vals in members:
-            brute = any(all(abs(w[i]) < abs(vals[i]) for i in range(ctx.degree))
-                        for z, w in members if z != y)
-            assert is_minimal(y, ctx, sig) != brute or not brute
+            # Same downward-closure argument, in absolute value: anything
+            # strictly inside the box of y is itself inside the T2 cutoff, so
+            # this comparison is exact in both directions.
+            others = {z for z, _ in members if z != y}
+            brute = any((y - z) in others for z in others)
+            assert is_indecomposable(y, ctx, sig) == (not brute), (
+                f"{y} signature {sig}: exhaustive says "
+                f"{'decomposable' if brute else 's-indecomposable'}")
