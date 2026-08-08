@@ -123,9 +123,16 @@ def _base(ctx):
         "discriminant": int(ctx.discriminant),
         "coeffs": [int(c) for c in ctx.K.defining_polynomial().list()[:-1]],
     }
+    # These come from the context, which returns a supplied value when the input
+    # table carried one and otherwise computes it.  Before, they were only ever
+    # forwarded from the input, so a minimal input table left them all NULL.
     for name in ("regulator", "class_number", "narrow_class_number",
-                 "is_monogenic", "monogenic_index", "num_subfields",
-                 "is_galois", "galois_label", "family", "family_parameter"):
+                 "monogenic_index", "num_subfields", "is_galois",
+                 "galois_label"):
+        v = getattr(ctx, name, None)
+        if v is not None:
+            rec[name] = v
+    for name in ("is_monogenic", "family", "family_parameter"):
         v = ctx.known.get(name)
         if v is not None:
             rec[name] = v
@@ -161,17 +168,18 @@ def compute_record(ctx, verify=True):
 
         # Everything below is one entry per signature class, in the order given
         # by signature_classes, with index 0 the totally positive one.
-        "num_indecomposables": [len(c) for c in coords],
-        "indecomposables": coords,
-        "indecomposables_norms": norms,
-        "indecomposables_traces": traces,
+        "num_indecomposables_all": [len(c) for c in coords],
+        "indecomposables_all": coords,
+        "indecomposables_norms_all": norms,
+        "indecomposables_traces_all": traces,
         "indecomposables_on_sail": sail,
         "min_norm_indecomposable": [min(c) if c else None for c in nonunit],
         "max_norm_indecomposable": [max(c) if c else None for c in norms],
         "min_trace_indecomposable": [min(c) if c else None for c in traces],
         "max_trace_indecomposable": [max(c) if c else None for c in traces],
-        "num_on_sail": [sum(c) for c in sail],
+        "num_indecomposables_on_sail": [sum(c) for c in sail],
     })
+    _add_codifferent_traces(ctx, rec, results)
     _add_sail_columns(ctx, rec, sigs, results)
     return MappingProxyType(rec)
 
@@ -197,6 +205,34 @@ def _all_classes(ctx, verify):
             failures.append(f"signature {tuple(sig)}: {type(exc).__name__}")
             results.append([])
     return masks, sigs, results, failures
+
+
+def _add_codifferent_traces(ctx, rec, results):
+    """
+    Codifferent traces for the totally positive class.
+
+    Only that class: the certificate argument -- Tr(lambda beta) >= 1 for every
+    totally positive beta -- is stated there, and the analogue for a general
+    signature class needs the sail's own supporting hyperplanes.
+    """
+    from sage.all import ZZ
+    from .certify import codifferent_trace
+
+    if not results or not results[0]:
+        return
+    traces = []
+    for y, _, _ in results[0]:
+        try:
+            t = codifferent_trace(y, ctx)
+        except Exception as exc:                    # noqa: BLE001 - recorded
+            logger.info("%s: codifferent trace unavailable for %s: %s",
+                        ctx.label, y, exc)
+            return
+        if t is None:
+            return
+        traces.append(int(ZZ(t)))
+    rec["codifferent_traces"] = traces
+    rec["max_codifferent_trace"] = max(traces)
 
 
 def _add_sail_columns(ctx, rec, sigs, results):
