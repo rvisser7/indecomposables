@@ -46,7 +46,6 @@ time.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field as _field
 from pathlib import Path
 from typing import Any, Callable
@@ -92,33 +91,41 @@ def _enc_float(v):
     return repr(float(v))
 
 
-def _nested_encode(v, depth):
+#: Delimiters for a nested value.  Square brackets, not Postgres's braces: the
+#: data files are read on GitHub far more often than they are loaded, order
+#: matters here, and braces read as set notation.  Converting to Postgres is a
+#: mechanical substitution at load time.
+OPEN, CLOSE = "[", "]"
+
+
+def _enc_nested(v):
     """
-    Encode a nested integer array.
+    Encode a value of any nesting depth.
 
-    ``None`` inside an array becomes the literal ``NULL``.  Note this is *not*
-    the same marker as a null whole field: ``\\N`` is COPY's field-level marker,
-    while inside an array literal Postgres expects the word ``NULL``.
-
-    Per-signature arrays need this: a class with no non-unit s-indecomposable
-    has no minimum norm, and the entry has to say so rather than invent a
-    sentinel that a reader could mistake for a real value.
+    One encoder for every nested column.  The separate rectangular-array and
+    JSON codecs existed only because Postgres array literals must be rectangular
+    and jagged data therefore had to be jsonb.  With square brackets the two are
+    written identically, so the distinction survives only in the declared type,
+    where it decides the Postgres column type rather than the file syntax.
     """
-    if depth == 0:
-        return "NULL" if v is None else str(int(v))
-    return "{" + ",".join(_nested_encode(t, depth - 1) for t in v) + "}"
+    if v is None:
+        return NULL
+    if isinstance(v, (list, tuple)):
+        return OPEN + ",".join(_enc_nested(t) for t in v) + CLOSE
+    return str(int(v))
 
 
-def _split_braces(s):
-    if not (s.startswith("{") and s.endswith("}")):
-        raise SchemaError(f"not an array literal: {s!r}")
+def _split_list(s):
+    """Split the body of a bracketed list on top-level commas."""
+    if not (s.startswith(OPEN) and s.endswith(CLOSE)):
+        raise SchemaError(f"not a list: {s!r}")
     body, out, depth, cur = s[1:-1], [], 0, []
     if not body:
         return []
     for ch in body:
-        if ch == "{":
+        if ch == OPEN:
             depth += 1
-        elif ch == "}":
+        elif ch == CLOSE:
             depth -= 1
         if ch == "," and depth == 0:
             out.append("".join(cur))
@@ -129,37 +136,28 @@ def _split_braces(s):
     return out
 
 
-def _nested_decode(s, depth):
-    if depth == 0:
-        return None if s.upper() == "NULL" else int(s)
-    return tuple(_nested_decode(t, depth - 1) for t in _split_braces(s))
-
-
-def _array(depth):
-    """Codec for a rectangular Postgres array of integers, nested ``depth`` deep."""
-    return (lambda v: _nested_encode(v, depth), lambda s: _nested_decode(s, depth))
+def _dec_nested(s):
+    """Inverse of :func:`_enc_nested`.  Depth is read off the brackets."""
+    s = s.strip()
+    if s == NULL:
+        return None
+    if s.startswith(OPEN):
+        return tuple(_dec_nested(t) for t in _split_list(s))
+    return int(s)
 
 
 def _to_tuples(o):
     return tuple(_to_tuples(t) for t in o) if isinstance(o, (list, tuple)) else o
 
 
-JSON = (lambda v: _enc_text(json.dumps(v, separators=(",", ":"))),
-        lambda s: _to_tuples(json.loads(s)))
-
 TEXT = (_enc_text, str)
 INT = (_enc_int, int)
 FLOAT = (_enc_float, float)
-ARRAY1 = _array(1)
-ARRAY2 = _array(2)
-ARRAY3 = _array(3)
-TEXT_ARRAY = (lambda v: "{" + ",".join(_enc_text(t) for t in v) + "}",
-              lambda s: tuple(_split_braces(s)))
+NESTED = (_enc_nested, _dec_nested)
 
+#: Kept as names for readability; all nested columns share one codec now.
+ARRAY1 = ARRAY2 = ARRAY3 = JSON = NESTED
 
-# ---------------------------------------------------------------------------
-# Columns
-# ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class Column:
@@ -198,7 +196,6 @@ SCALAR_CODECS = {
     "numeric": INT,
     "double precision": FLOAT,
     "real": FLOAT,
-    "jsonb": JSON,
 }
 
 SCHEMA_FILE = Path(__file__).with_name("schema.yaml")
@@ -207,9 +204,6 @@ SCHEMA_FILE = Path(__file__).with_name("schema.yaml")
 #: declarations, and it is really a property of the pipeline rather than of the
 #: schema: without a label a row cannot be merged, sorted or joined.
 NOT_NULL = ("lmfdb_label",)
-
-
-ARRAY_CODECS = {1: ARRAY1, 2: ARRAY2, 3: ARRAY3}
 
 
 def parse_type(declared):
@@ -251,13 +245,9 @@ def pg_type_for(declared, jagged=False):
 
 
 def codec_for(declared, jagged=False):
-    """JSON for a jagged column, otherwise the array codec of the right depth."""
+    """A scalar codec, or the single nested codec for anything with brackets."""
     base, dims = parse_type(declared)
-    if dims == 0:
-        return SCALAR_CODECS[base]
-    if jagged:
-        return JSON
-    return ARRAY_CODECS[dims]
+    return SCALAR_CODECS[base] if dims == 0 else NESTED
 
 
 def _files(name, spec):
@@ -390,24 +380,50 @@ def _shape(v, limit=3):
     return f"{'list of ' * depth}{type(probe).__name__}"
 
 
-def _require_rectangular(col, v):
-    """
-    Reject ragged data in a column not declared ``jagged``.
+def _actual_depth(v):
+    """Nesting depth of a value: 0 for a scalar, 1 for a flat list, and so on."""
+    depth = 0
+    while isinstance(v, (list, tuple)):
+        depth += 1
+        if not v:
+            break                       # an empty list ends the descent
+        v = v[0]
+    return depth
 
-    Postgres refuses ``{{1,2},{3,4,5}}`` on COPY even though the CREATE TABLE
-    was accepted, so without this the file would be written happily and fail
-    only at load time -- a long way from the cause.  ``jsonb`` columns skip the
-    check, which is exactly what ``jagged: true`` buys.
+
+def _check_shape(col, v):
+    """
+    Verify a value against its declared type before encoding.
+
+    Two checks, both of which the old per-depth codecs gave for free and the
+    single recursive encoder does not: it will happily write any nesting at all,
+    so a producer emitting three levels into a two-level column would now
+    succeed silently and corrupt the file.
+
+    * **depth** must match the declared type, always;
+    * **rectangularity** is required unless the column is declared ``jagged``,
+      since that is what decides whether it can be a Postgres array on load.
     """
     _, dims = parse_type(col.declared_type)
-    if dims < 2 or v is None:
+    if dims == 0 or v is None:
+        return
+
+    if not v:
+        return                          # an empty list is fine at any depth
+    got = _actual_depth(v)
+    if got != dims:
+        raise SchemaError(
+            f"column {col.name!r} is declared {col.declared_type!r} "
+            f"(nesting {dims}) but the value has nesting {got}. The producer and "
+            "schema.yaml disagree about this column's shape.")
+    if col.jagged or dims < 2:
         return
     lengths = {len(row) for row in v if isinstance(row, (list, tuple))}
     if len(lengths) > 1:
         raise SchemaError(
             f"column {col.name!r} is declared {col.declared_type!r} but the data "
-            f"is ragged (row lengths {sorted(lengths)}). A Postgres array must be "
-            "rectangular; add `jagged: true` to store it as jsonb.")
+            f"is ragged (row lengths {sorted(lengths)}). Add `jagged: true` if "
+            "that is intended -- it is what decides the Postgres column type.")
 
 
 def encode_row(record, tier: str) -> str:
@@ -420,8 +436,7 @@ def encode_row(record, tier: str) -> str:
             out.append(NULL)
             continue
         try:
-            if not c.jagged:
-                _require_rectangular(c, v)
+            _check_shape(c, v)
             out.append(c.encode(v))
         except SchemaError:
             raise
