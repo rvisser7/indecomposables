@@ -47,7 +47,7 @@ from .normalize import _enumerate_close
 
 __all__ = [
     "decomposition_witness", "is_indecomposable", "codifferent_certificate",
-    "is_on_sail", "classify",
+    "codifferent_trace", "is_on_sail", "classify",
 ]
 
 #: Refuse to enumerate more than this many candidates before failing loudly.
@@ -237,6 +237,45 @@ def codifferent_certificate(x, ctx, prec=None):
             continue
         if QQ((lam * x).trace()) == 1:
             return lam
+    return None
+
+
+def codifferent_trace(x, ctx, prec=None):
+    """
+    ``min { Tr(lambda x) : lambda > 0 in the codifferent }``, a positive integer.
+
+    Equals 1 exactly when ``x`` lies on the sail, so this is a graded refinement
+    of :func:`is_on_sail`: it says not merely that ``x`` is off the sail but how
+    far.  Known to be 1 throughout for real quadratic fields and at most 2 for
+    simplest cubics; Kala-Tinkova show it can be arbitrarily large in other
+    families, and its distribution is not known -- which is the reason to record
+    it across a large database.
+
+    Costs nothing beyond :func:`codifferent_certificate`, which enumerates the
+    same box and stops at 1 instead of taking the minimum.
+    """
+    K = ctx.K
+    x = K(x)
+    prec = prec or ctx.prec
+    embs = ctx.real_embeddings(prec)
+    n = ctx.degree
+    basis = _codifferent_basis(ctx)
+
+    # Tr(lambda x) = t with lambda, x both totally positive forces
+    # 0 < sigma_i(lambda) < t / sigma_i(x).  The bound is unknown in advance, so
+    # widen the box until something is found; in practice the first try succeeds.
+    best = None
+    for t in (1, 2, 4, 8, 16, 32):
+        uppers = [t / embs[i](x) for i in range(n)]
+        for a in _box_points(basis, uppers, ctx, prec):
+            lam = sum(ZZ(c) * b for c, b in zip(a, basis))
+            if lam.is_zero() or not lam.is_totally_positive():
+                continue
+            tr = QQ((lam * x).trace())
+            if tr > 0 and tr in ZZ and (best is None or tr < best):
+                best = ZZ(tr)
+        if best is not None:
+            return best
     return None
 
 
