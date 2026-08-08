@@ -173,6 +173,19 @@ _NUMERIC = {"discriminant", "class_number", "narrow_class_number",
             "is_monogenic", "num_subfields"}
 
 
+def _validate_require(require):
+    """Fail early on a misspelled column rather than recomputing everything."""
+    if not require:
+        return
+    from indecomposables import schema
+    known = {c.name for c in schema.columns(schema.FULL)}
+    unknown = [c for c in require if c not in known]
+    if unknown:
+        raise SystemExit(
+            f"--require names unknown column(s) {unknown}; "
+            f"see indecomposables/schema.yaml")
+
+
 def _known(parts, idx):
     out = []
     for src, dest in KNOWN_COLUMNS.items():
@@ -190,16 +203,44 @@ def _known(parts, idx):
     return tuple(out)
 
 
-def done_labels(work_dir: Path) -> set:
-    """Labels already present in any shard.  This is the whole of resume."""
-    seen = set()
+def done_labels(work_dir: Path, require=()) -> tuple:
+    """
+    Labels already computed, and those needing recomputation.
+
+    Returns ``(done, stale)``.  With no ``require``, a label in any shard counts
+    as done -- which is the cheap common case but says nothing about the row's
+    contents, so a row produced by older code counts as done even if the current
+    code would fill more columns.
+
+    ``require`` names columns that must be non-null for the row to count.  That
+    is deliberately explicit rather than "recompute anything with a NULL": most
+    nulls here are correct.  ``min_norm_indecomposable`` is null for a class
+    whose s-indecomposables are all units, the non-totally-positive sail columns
+    are null by design, and some columns are not implemented at all.
+    """
+    from indecomposables import schema
+
+    done, stale = set(), set()
     for shard in sorted(work_dir.glob(SHARD_GLOB)):
         with shard.open() as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith("#"):
-                    seen.add(line.split("|", 1)[0])
-    return seen
+                if not line or line.startswith("#"):
+                    continue
+                label = line.split("|", 1)[0]
+                if not require:
+                    done.add(label)
+                    continue
+                try:
+                    rec = schema.decode_row(line, schema.FULL)
+                except schema.SchemaError:
+                    stale.add(label)          # unreadable: from older code
+                    continue
+                if all(rec.get(c) is not None for c in require):
+                    done.add(label)
+                else:
+                    stale.add(label)
+    return done - stale, stale
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +360,13 @@ def parse_args(argv=None):
                    help="kill a worker stuck this many times past --timeout")
     p.add_argument("--fsync", action="store_true",
                    help="fsync after every row (slower, survives power loss)")
-    p.add_argument("--no-resume", action="store_true")
+    p.add_argument("--no-resume", action="store_true",
+                   help="ignore existing shards entirely and recompute everything")
+    p.add_argument("--require", default=None, metavar="COL[,COL...]",
+                   help="treat a field as done only if these columns are "
+                        "non-null in its existing row; use after a change that "
+                        "fills columns older rows are missing, e.g. "
+                        "--require regulator,class_number,indecomposables_all")
     p.add_argument("--limit", type=int, default=None, help="cap work items (testing)")
     p.add_argument("--shuffle", action="store_true",
                    help="shuffle work order; useful for an unbiased partial run")
@@ -364,9 +411,11 @@ def main(argv=None):
                             sorted_input=not args.scan_all)
 
     total_in_scope = len(items)
-    skipped = 0
+    skipped, stale = 0, set()
     if not args.no_resume:
-        finished = done_labels(work_dir)
+        require = tuple(c.strip() for c in (args.require or "").split(",") if c.strip())
+        _validate_require(require)
+        finished, stale = done_labels(work_dir, require)
         before = len(items)
         items = [it for it in items if it.label not in finished]
         skipped = before - len(items)
@@ -378,6 +427,9 @@ def main(argv=None):
 
     print(f"degree {args.degree}, |disc| in [{args.disc_min}, {args.disc_max}]")
     print(f"  in scope: {total_in_scope}   already done: {skipped}   to do: {len(items)}")
+    if stale:
+        print(f"  {len(stale)} existing row(s) lack a required column and will be "
+              "recomputed; the new row supersedes the old one at merge time")
     print(f"  workers: {args.workers}   soft timeout: {args.timeout}s   "
           f"hard: {args.timeout * args.hard_timeout_factor}s")
     print(f"  shards:  {work_dir}/shard-NNN.txt")
