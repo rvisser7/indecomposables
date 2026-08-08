@@ -127,7 +127,7 @@ num_indecomposables_tp:
     type: integer
     files: [mini, full]
     short_doc: 'number of indecomposables up to multiplication by totally positive units.'
-    long_doc: "Number of totally positive indecomposables, up to multiplication by U^+.  This is the same as num_indecomposables[0]"
+    long_doc: "Number of totally positive indecomposables, up to multiplication by U^+.  This is the same as num_indecomposables_all[0]"
 
 num_indecomposables_all:
     type: integer[]
@@ -137,9 +137,9 @@ num_indecomposables_all:
 num_on_sail:
   type: integer
   files: [mini, full]
-  short_doc: 'how many of the indecomposables lie on the sail; equals num_indecomposables when n = 2'
+  short_doc: 'how many of the indecomposables lie on the sail; equals num_indecomposables_tp when n = 2'
   long_doc: >-
-    Every lattice point on the sail is indecomposable, but for degree at least 3 the converse fails, so this can be strictly smaller than num_indecomposables. The size of the gap is one of the things this database is for.
+    Every lattice point on the sail is indecomposable, but for degree at least 3 the converse fails, so this can be strictly smaller than num_indecomposables_tp. The size of the gap is one of the things this database is for.
 
 min_norm_indecomposable:
   type: numeric
@@ -180,10 +180,10 @@ min_norm_fprimea_signature:
   files: [mini, full]
   short_doc: 'smallest absolute norm in the signature class containing f''(a)'
 
-num_minimal_total:
+num_indecomposables_total:
   type: integer
   files: [mini, full]
-  short_doc: 'total number of minimal elements summed over all signature classes'
+  short_doc: 'total number of s-indecomposables summed over all signature classes'
 
 # ---------------------------------
 # -SAIL DATABASE !
@@ -197,27 +197,22 @@ num_sail_facets:
 
 
 
-num_minimal_by_signature:
-  type: integer[]
-  files: [full]
-  short_doc: 'number of minimal elements in each signature class'
-
-minimal_by_signature:
+indecomposables_all:
   type: jsonb
   files: [full]
-  short_doc: 'minimal elements of each signature class, in canonical form, as coefficient vectors; jagged, so JSON rather than a Postgres array'
+  short_doc: 'the s-indecomposables of each signature class, in canonical form, as coefficient vectors; jagged, so JSON rather than a Postgres array'
   long_doc: >-
-    For a general signature class S_sigma is not closed under addition, so 'indecomposable' does not transfer literally. What does is: alpha in S_sigma is minimal if no beta in S_sigma has |sigma_i(beta)| < |sigma_i(alpha)| for all i. On the totally positive class this is exactly indecomposability.
+    x in the signature class S_s is s-indecomposable if it is not a sum of two elements of S_s. Each S_s is the lattice intersected with an open orthant, hence closed under addition, so this is the same notion in every class; for s totally positive it is ordinary indecomposability. Equivalently, no y in S_s has |sigma_i(y)| < |sigma_i(x)| for all i, which is the form the computation uses.
 
-minimal_norms_by_signature:
+indecomposables_norms_all:
   type: jsonb
   files: [full]
-  short_doc: 'absolute norms of minimal_by_signature, same order'
+  short_doc: 'absolute norms of indecomposables_all, same order'
 
 indecomposables:
   type: numeric[][]
   files: [full]
-  short_doc: 'the totally positive class of minimal_by_signature, i.e. the indecomposables; duplicated here because it is what most users want'
+  short_doc: 'the totally positive class of indecomposables_all; duplicated here because it is what most users want'
 
 indecomposables_norms:
   type: numeric[]
@@ -244,7 +239,7 @@ sail_facet_normals:
 sail_facet_vertices:
   type: jsonb
   files: [full]
-  short_doc: 'per signature class, per facet, indices into minimal_by_signature of that class; indices rather than coordinates so the two cannot disagree'
+  short_doc: 'per signature class, per facet, indices into indecomposables_all of that class; indices rather than coordinates so the two cannot disagree'
 
 num_sail_facets_by_signature:
   type: integer[]
@@ -273,7 +268,7 @@ max_codifferent_trace:
   files: []
   short_doc: 'largest entry of codifferent_traces'
   long_doc: >-
-      Equal to 1 exactly when every indecomposable lies on the sail, so it is a scalar version of num_on_sail == num_indecomposables that can be filtered on directly.
+      Equal to 1 exactly when every indecomposable lies on the sail, so it is a scalar version of num_on_sail == num_indecomposables_tp that can be filtered on directly.
 
 num_sail_vertices:
   type: integer
@@ -285,12 +280,12 @@ num_sail_vertices:
 min_norm_by_signature:
   type: integer[]
   files: []
-  short_doc: 'smallest absolute norm among the minimal elements of each signature class'
+  short_doc: 'smallest absolute norm among the s-indecomposables of each signature class'
 
 max_norm_by_signature:
   type: integer[]
   files: []
-  short_doc: 'largest absolute norm among the minimal elements of each signature class'
+  short_doc: 'largest absolute norm among the s-indecomposables of each signature class'
 
 # ------------------------------------------------------------
 # Miscellenaous stuff (not sure if we're including this?)
@@ -317,4 +312,3 @@ sail_complete:
   short_doc: 'whether the completeness certificate passed for the totally positive sail'
   long_doc: >-
     Set when every codimension-2 face of every facet is paired with another, which certifies that the facets tile a closed surface modulo units rather than that the search merely stopped.
-
