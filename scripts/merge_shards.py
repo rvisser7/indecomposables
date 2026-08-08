@@ -22,7 +22,8 @@ a gap is still accounted for: rows plus failures equals the scope.
 ``degree<n>_mini.txt`` is **never computed separately**.  It is a projection of
 the full file, so the columns the two share cannot drift apart.
 
-A label appearing in two shards is just a recomputation -- the later row wins.
+A label appearing in two shards is a recomputation; the row with more columns
+filled wins, which is what makes ``run_parallel.py --require`` work.
 
 No Sage is needed here; merging is pure text handling.
 """
@@ -53,6 +54,15 @@ def label_key(label: str):
     return (int(disc), int(index), label)
 
 
+def _filled(rec):
+    return sum(1 for v in rec.values() if v is not None)
+
+
+def _richer(new, old):
+    """Whether ``new`` should supersede ``old``: more columns filled, or a tie."""
+    return _filled(new) >= _filled(old)
+
+
 def read_shards(work_dir: Path):
     """All full-tier rows from every shard, as ``{label: record}``."""
     best, seen, malformed = {}, 0, []
@@ -67,9 +77,14 @@ def read_shards(work_dir: Path):
             except schema.SchemaError as exc:
                 malformed.append((shard.name, lineno, str(exc)))
                 continue
-            # Every shard row is a completed field, so a duplicate is just a
-            # recomputation; the later one wins.
-            best[rec["lmfdb_label"]] = rec
+            # A duplicate is a recomputation.  Prefer the row with more columns
+            # filled, falling back to the later one: after a change that fills
+            # columns older rows lack -- see run_parallel.py --require -- the new
+            # row may well land in an earlier shard file than the old, so "last
+            # read wins" would keep the stale one.
+            label = rec["lmfdb_label"]
+            if label not in best or _richer(rec, best[label]):
+                best[label] = rec
     return best, seen, malformed
 
 
