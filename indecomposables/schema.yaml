@@ -4,6 +4,13 @@
 # for data/README.md. `files` determines which files this column is included in the output.
 # Could be either mini and/or full.
 #
+# `type` is logical: the element type plus how deeply it is nested, e.g.
+# `numeric[][]` for a 2-D array of numbers.  Add `jagged: true` when the nesting
+# is ragged -- the classes hold different numbers of elements, say.  That is the
+# one thing that cannot be derived, and it decides the storage: Postgres array
+# literals must be rectangular, so a jagged column is written as jsonb while a
+# rectangular one keeps its array type.  schema.py handles the mapping.
+#
 # Column order here is the column order in the data files.
 
 
@@ -133,7 +140,8 @@ num_indecomposables_all:
     short_doc: 'number of s-indecomposables in each signature s, up to multiplication by totally positive units'
 
 indecomposables_all:
-  type: jsonb
+  type: numeric[][][]
+  jagged: true
   files: [full]
   short_doc: 'the s-indecomposables of each signature class, in canonical form, as coefficient vectors; jagged, so JSON rather than a Postgres array'
   long_doc: >-
@@ -146,12 +154,14 @@ indecomposables_tp:
   short_doc: 'the totally positive class of indecomposables_all; duplicated here because it is what most users want'
 
 indecomposables_norms_all:
-  type: jsonb
+  type: numeric[][]
+  jagged: true
   files: [full]
   short_doc: 'absolute norms of indecomposables_all, same order'
 
 indecomposables_traces_all:
-  type: numeric[]
+  type: numeric[][]
+  jagged: true
   files: [full]
   short_doc: 'traces of indecomposables_all, same order'
 
@@ -232,19 +242,22 @@ num_sail_facets:
   short_doc: 'facets of the totally positive sail'
 
 indecomposables_on_sail:
-  type: smallint[]
+  type: smallint[][]
+  jagged: true
   files: [full]
   short_doc: '0/1 flags, same order, for whether each lies on the sail'
 
 sail_facet_normals:
-  type: jsonb
+  type: numeric[][][]
+  jagged: true
   files: [full]
   short_doc: 'per signature class, the facet normals lambda in the codifferent as coefficient vectors; each facet is the hyperplane Tr(lambda x) = 1'
   long_doc: >-
       Each facet of the sail is the hyperplane Tr(lambda x) = 1 for a totally positive lambda in the codifferent. Such a lambda proves every element on that facet indecomposable, since Tr(lambda beta) >= 1 for all totally positive beta.
 
 sail_facet_vertices:
-  type: jsonb
+  type: integer[][][]
+  jagged: true
   files: [full]
   short_doc: 'per signature class, per facet, indices into indecomposables_all of that class; indices rather than coordinates so the two cannot disagree'
 
