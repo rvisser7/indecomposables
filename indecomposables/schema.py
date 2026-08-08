@@ -389,14 +389,36 @@ def _shape(v, limit=3):
 
 
 def _actual_depth(v):
-    """Nesting depth of a value: 0 for a scalar, 1 for a flat list, and so on."""
+    """
+    Best-effort nesting depth, for error messages only.
+
+    Cannot see past an empty list, so it under-reports for a value like
+    ``[[], []]``.  :func:`_has_depth` is the one that decides.
+    """
     depth = 0
     while isinstance(v, (list, tuple)):
         depth += 1
         if not v:
-            break                       # an empty list ends the descent
+            break
         v = v[0]
     return depth
+
+
+def _has_depth(v, depth):
+    """
+    Whether ``v`` is nested exactly ``depth`` deep, treating empties correctly.
+
+    Descending through ``v[0]`` and counting is wrong: ``[[], []]`` is a
+    perfectly good depth-3 value that happens to be empty at every class -- which
+    is what a per-signature column looks like when nothing was found -- and
+    counting reports depth 2.  Recursing instead lets an empty list satisfy any
+    remaining depth vacuously.
+    """
+    if depth == 0:
+        return not isinstance(v, (list, tuple))
+    if not isinstance(v, (list, tuple)):
+        return False
+    return all(_has_depth(t, depth - 1) for t in v)
 
 
 def _check_shape(col, v):
@@ -416,14 +438,11 @@ def _check_shape(col, v):
     if dims == 0 or v is None:
         return
 
-    if not v:
-        return                          # an empty list is fine at any depth
-    got = _actual_depth(v)
-    if got != dims:
+    if not _has_depth(v, dims):
         raise SchemaError(
             f"column {col.name!r} is declared {col.declared_type!r} "
-            f"(nesting {dims}) but the value has nesting {got}. The producer and "
-            "schema.yaml disagree about this column's shape.")
+            f"(nesting {dims}) but the value has nesting {_actual_depth(v)}. The "
+            "producer and schema.yaml disagree about this column's shape.")
     if col.jagged or dims < 2:
         return
     lengths = {len(row) for row in v if isinstance(row, (list, tuple))}
