@@ -8,7 +8,7 @@
 
 
 # ---------------------------------------
-# LMFDB invairnats of the field K itself
+# LMFDB invariants of the field K itself
 # ---------------------------------------
 
 lmfdb_label:
@@ -139,26 +139,23 @@ indecomposables_all:
   long_doc: >-
     x in the signature class S_s is s-indecomposable if it is not a sum of two elements of S_s. Each S_s is the lattice intersected with an open orthant, hence closed under addition, so this is the same notion in every class; for s totally positive it is ordinary indecomposability. Equivalently, no y in S_s has |sigma_i(y)| < |sigma_i(x)| for all i, which is the form the computation uses.
 
+# probably don't need this, as its just indecomposables_all[0]
+indecomposables_tp:
+  type: numeric[][]
+  files: []
+  short_doc: 'the totally positive class of indecomposables_all; duplicated here because it is what most users want'
+
 indecomposables_norms_all:
   type: jsonb
   files: [full]
   short_doc: 'absolute norms of indecomposables_all, same order'
 
-indecomposables:
-  type: numeric[][]
-  files: [full]
-  short_doc: 'the totally positive class of indecomposables_all; duplicated here because it is what most users want'
-
-indecomposables_norms:
+indecomposables_traces_all:
   type: numeric[]
   files: [full]
-  short_doc: 'norms, same order'
+  short_doc: 'traces of indecomposables_all, same order'
 
-indecomposables_traces:
-  type: numeric[]
-  files: [full]
-  short_doc: 'traces, same order'
-
+# Here we can exclude units in all signatures (as units are always indecomposable)
 min_norm_indecomposable:
   type: numeric[]
   files: [mini, full]
@@ -200,18 +197,17 @@ min_norm_fprimea_signature:
 
 codifferent_traces:
   type: numeric[]
-  files: []
+  files: [full]
   short_doc: 'for each indecomposable, the least Tr(lambda alpha) over totally positive lambda in the codifferent'
   long_doc: >-
       Equals 1 exactly when alpha lies on the sail, so this is a graded refinement of indecomposables_on_sail. Known to be 1 throughout for real quadratic fields and at most 2 for simplest cubics, and Kala-Tinkova show it can be arbitrarily large in other families; its distribution is not known.
 
 max_codifferent_trace:
   type: smallint
-  files: []
+  files: [mini, full]
   short_doc: 'largest entry of codifferent_traces'
   long_doc: >-
       Equal to 1 exactly when every indecomposable lies on the sail, so it is a scalar version of num_on_sail == num_indecomposables_tp that can be filtered on directly.
-
 
 # probably don't need this?
 num_indecomposables_total:
@@ -220,10 +216,10 @@ num_indecomposables_total:
   short_doc: 'total number of s-indecomposables summed over all signature classes'
 
 # ---------------------------------
-# -SAIL DATABASE !
+# SAIL DATABASE !
 # --------------------------------
 
-num_on_sail:
+num_indecomposables_on_sail:
   type: integer[]
   files: [mini, full]
   short_doc: 'how many of the s-indecomposables lie on the s-sail; equals num_indecomposables_all when n = 2'
@@ -257,27 +253,12 @@ num_sail_facets_by_signature:
   files: [full]
   short_doc: 'facet count per signature class'
 
-sail_complete_by_signature:
-  type: smallint[]
-  files: [full]
-  short_doc: '0/1 completeness certificate per signature class'
-
 num_sail_vertices:
   type: integer[]
   files: []
   short_doc: 'extreme points of the sail, as opposed to all lattice points on it'
   long_doc: >-
       In degree 2 this is the distinction between convergents and semiconvergents. Derivable from sail_facet_vertices, but stored so it can be queried without reading the array.
-
-min_norm_by_signature:
-  type: integer[]
-  files: []
-  short_doc: 'smallest absolute norm among the s-indecomposables of each signature class'
-
-max_norm_by_signature:
-  type: integer[]
-  files: []
-  short_doc: 'largest absolute norm among the s-indecomposables of each signature class'
 
 # ------------------------------------------------------------
 # Miscellenaous stuff (not sure if we're including this?)
@@ -310,3 +291,8 @@ sail_complete:
   short_doc: 'whether the completeness certificate passed for the totally positive sail'
   long_doc: >-
     Set when every codimension-2 face of every facet is paired with another, which certifies that the facets tile a closed surface modulo units rather than that the search merely stopped.
+
+sail_complete_by_signature:
+  type: smallint[]
+  files: []
+  short_doc: '0/1 completeness certificate per signature class'
