@@ -54,7 +54,7 @@ from typing import Any, Callable
 import yaml
 
 __all__ = [
-    "Column", "COLUMNS", "VERSION", "SCALAR_CODECS", "codec_for", "tier_for", "load", "MINI", "FULL", "STATUSES",
+    "Column", "COLUMNS", "SCALAR_CODECS", "codec_for", "reserved", "load", "MINI", "FULL", "STATUSES",
     "columns", "header_lines", "encode_row", "decode_row", "project",
     "docs_table", "create_table_sql", "NULL", "SEP", "SchemaError",
 ]
@@ -93,8 +93,19 @@ def _enc_float(v):
 
 
 def _nested_encode(v, depth):
+    """
+    Encode a nested integer array.
+
+    ``None`` inside an array becomes the literal ``NULL``.  Note this is *not*
+    the same marker as a null whole field: ``\\N`` is COPY's field-level marker,
+    while inside an array literal Postgres expects the word ``NULL``.
+
+    Per-signature arrays need this: a class with no non-unit s-indecomposable
+    has no minimum norm, and the entry has to say so rather than invent a
+    sentinel that a reader could mistake for a real value.
+    """
     if depth == 0:
-        return str(int(v))
+        return "NULL" if v is None else str(int(v))
     return "{" + ",".join(_nested_encode(t, depth - 1) for t in v) + "}"
 
 
@@ -120,7 +131,7 @@ def _split_braces(s):
 
 def _nested_decode(s, depth):
     if depth == 0:
-        return int(s)
+        return None if s.upper() == "NULL" else int(s)
     return tuple(_nested_decode(t, depth - 1) for t in _split_braces(s))
 
 
@@ -153,11 +164,15 @@ TEXT_ARRAY = (lambda v: "{" + ",".join(_enc_text(t) for t in v) + "}",
 class Column:
     name: str
     pg_type: str
-    tier: str
+    files: frozenset               # subset of {MINI, FULL}; empty means reserved
     doc: str                       # short_doc: the one-line description
     codec: tuple = _field(repr=False)
     nullable: bool = True
     long_doc: str = None           # optional prose for data/README.md
+
+    @property
+    def emitted(self):
+        return bool(self.files)
 
     @property
     def encode(self) -> Callable[[Any], str]:
@@ -184,6 +199,11 @@ SCALAR_CODECS = {
 }
 
 SCHEMA_FILE = Path(__file__).with_name("schema.yaml")
+
+#: Columns every row must carry.  Short enough to live here rather than in the
+#: declarations, and it is really a property of the pipeline rather than of the
+#: schema: without a label a row cannot be merged, sorted or joined.
+NOT_NULL = ("lmfdb_label",)
 
 
 def codec_for(pg_type):
@@ -215,9 +235,33 @@ def codec_for(pg_type):
                       "jsonb, since jagged nesting cannot be a Postgres array")
 
 
-def tier_for(pg_type):
-    """Arrays and jsonb live in the full file only; scalars live in both."""
-    return FULL if (pg_type.endswith("[]") or pg_type == "jsonb") else MINI
+def _files(name, spec):
+    """
+    Which data files a column is written to.
+
+    Required, and validated, because getting it wrong silently changes what is
+    published.  ``mini`` without ``full`` is rejected: ``degree<n>_mini.txt`` is
+    generated from ``degree<n>.txt`` by projection, so a mini-only column would
+    have nothing to project from.  An empty list means the column is declared
+    but not emitted -- a name and definition settled in advance of the data.
+    """
+    where = f"{SCHEMA_FILE.name}: column {name!r}"
+    if "files" not in spec:
+        raise SchemaError(
+            f"{where}: missing required key 'files'; use [mini, full], [full], "
+            "or [] for a column that is declared but written to no file")
+    value = spec["files"] or []
+    if isinstance(value, str):
+        value = [value]
+    bad = [v for v in value if v not in (MINI, FULL)]
+    if bad:
+        raise SchemaError(f"{where}: files has unknown name(s) {bad}; "
+                          f"allowed values are {MINI!r} and {FULL!r}")
+    if MINI in value and FULL not in value:
+        raise SchemaError(
+            f"{where}: files has {MINI!r} without {FULL!r}; the mini file is "
+            "a projection of the full one, so a mini-only column cannot exist")
+    return frozenset(value)
 
 
 def _validate(name, spec):
@@ -227,9 +271,7 @@ def _validate(name, spec):
     for key in ("type", "short_doc"):
         if not spec.get(key):
             raise SchemaError(f"{where}: missing required key {key!r}")
-    if spec.get("tier", MINI) not in (MINI, FULL):
-        raise SchemaError(f"{where}: tier must be {MINI!r} or {FULL!r}")
-    unknown = set(spec) - {"type", "tier", "short_doc", "long_doc"}
+    unknown = set(spec) - {"type", "files", "short_doc", "long_doc"}
     if unknown:
         raise SchemaError(
             f"{where}: unknown key(s) {sorted(unknown)}; "
@@ -240,38 +282,33 @@ def load(path=None):
     """
     Read the declarations.  Called once at import; re-callable for tests.
 
-    ``columns`` is a mapping, and its order is the column order in the data
-    files -- YAML mappings load in document order, and :func:`header_lines`
-    depends on that.
+    The file is a flat mapping from column name to declaration, and its order is
+    the column order in the data files -- YAML mappings load in document order,
+    and :func:`header_lines` depends on that.
     """
     path = Path(path) if path else SCHEMA_FILE
     with path.open() as fh:
         doc = yaml.safe_load(fh)
-    if not isinstance(doc, dict) or not isinstance(doc.get("columns"), dict):
-        raise SchemaError(f"{path}: expected a mapping with a 'columns' mapping")
+    if not isinstance(doc, dict):
+        raise SchemaError(f"{path}: expected a mapping from column name to declaration")
 
-    required = set(doc.get("required") or ())
     cols = []
-    for name, spec in doc["columns"].items():
+    for name, spec in doc.items():
         _validate(name, spec)
         pg = str(spec["type"]).strip()
         cols.append(Column(
             name=name, pg_type=pg,
-            tier=spec.get("tier", tier_for(pg)),
+            files=_files(name, spec),
             doc=" ".join(str(spec["short_doc"]).split()),
             long_doc=" ".join(str(spec.get("long_doc", "")).split()) or None,
             codec=codec_for(pg),
-            nullable=name not in required))
+            nullable=name not in NOT_NULL))
     if not cols:
         raise SchemaError(f"{path}: no columns declared")
-    unknown = required - {c.name for c in cols}
-    if unknown:
-        raise SchemaError(f"{path}: 'required' names undeclared column(s) {sorted(unknown)}")
-    return int(doc.get("version", 0)), tuple(cols)
+    return tuple(cols)
 
 
-#: Schema version, bumped on any change and recorded in ``data/manifest.json``.
-VERSION, COLUMNS = load()
+COLUMNS = load()
 
 _BY_NAME = {c.name: c for c in COLUMNS}
 if len(_BY_NAME) != len(COLUMNS):
@@ -279,12 +316,20 @@ if len(_BY_NAME) != len(COLUMNS):
 
 
 def columns(tier: str) -> tuple:
-    """Columns of a tier, in file order.  ``full`` is a superset of ``mini``."""
-    if tier == MINI:
-        return tuple(c for c in COLUMNS if c.tier == MINI)
-    if tier == FULL:
-        return COLUMNS
-    raise SchemaError(f"unknown tier {tier!r}")
+    """
+    Columns written to one file, in file order.
+
+    Columns whose ``files`` is empty are declared but written nowhere, and so
+    appear in neither.  ``full`` is a superset of ``mini`` by construction.
+    """
+    if tier not in (MINI, FULL):
+        raise SchemaError(f"unknown file {tier!r}")
+    return tuple(c for c in COLUMNS if tier in c.files)
+
+
+def reserved() -> tuple:
+    """Columns declared in the schema but not written to any file."""
+    return tuple(c for c in COLUMNS if not c.emitted)
 
 
 # ---------------------------------------------------------------------------
