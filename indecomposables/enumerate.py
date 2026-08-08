@@ -1,9 +1,9 @@
 """
-Finding all minimal elements, in every signature class.
+Finding all s-indecomposables, in every signature class.
 
 Strategy
 --------
-The set of minimal elements is the **Hilbert basis** of the additive semigroup
+The set of s-indecomposables is the **Hilbert basis** of the additive semigroup
 ``Lambda ∩ C``: the elements that are not sums of two others.  The cone ``C`` is
 irrational with respect to ``Lambda``, so that basis is infinite -- but finite
 modulo the totally positive units, which is what makes the computation finite.
@@ -30,7 +30,7 @@ Concretely, three steps.
    membership), then the box test with an early exit.
 
 A note on the module name: it shadows the Python builtin, so import the
-submodule directly -- ``from indecomposables.enumerate import minimal_elements``
+submodule directly -- ``from indecomposables.enumerate import indecomposables_in_class``
 -- and never ``from indecomposables import enumerate``, which would rebind
 ``enumerate`` for the rest of the importing file.  Every import inside the
 package is relative and therefore unaffected.
@@ -46,14 +46,14 @@ from __future__ import annotations
 
 from sage.all import Matrix, RealField, ZZ
 
-from .certify import classify, is_minimal, is_on_sail
+from .certify import classify, is_indecomposable, is_on_sail
 from .logging_utils import get_logger
 from .signatures import field_signature_classes, vector_to_mask
 
 logger = get_logger("enumerate")
 
 __all__ = [
-    "t2_bound", "trace_form", "candidates", "minimal_elements",
+    "t2_bound", "trace_form", "candidates", "indecomposables_in_class",
     "indecomposables_exhaustive", "all_signature_classes",
 ]
 
@@ -71,7 +71,7 @@ class CandidateExplosion(RuntimeError):
 
 def t2_bound(ctx, norm_bound=None):
     """
-    Cap on ``T2(x) = sum_i sigma_i(x)^2`` for a canonical minimal element.
+    Cap on ``T2(x) = sum_i sigma_i(x)^2`` for a canonical s-indecomposable.
 
     Positive definite on every signature class, so a single bound serves all of
     them -- unlike the trace, which is only useful in the totally positive one.
@@ -116,9 +116,9 @@ def candidates(ctx, bound=None, cap=MAX_CANDIDATES):
 # Minimal elements
 # ---------------------------------------------------------------------------
 
-def minimal_elements(ctx, signature=None, bound=None, verify=True):
+def indecomposables_in_class(ctx, signature=None, bound=None, verify=True):
     """
-    Minimal elements of one signature class, canonical and deduplicated.
+    The s-indecomposables of one signature class, canonical and deduplicated.
 
     Returns a list of ``(element, on_sail, reason)``.  ``reason`` records which
     test decided the element, since only ``box_exhausted`` depends on a
@@ -146,7 +146,7 @@ def minimal_elements(ctx, signature=None, bound=None, verify=True):
                 indec, on_sail, reason, _ = classify(y, ctx, verify=verify)
                 if indec:
                     found.append((y, on_sail, reason))
-            elif is_minimal(y, ctx, signature, verify=verify):
+            elif is_indecomposable(y, ctx, signature, verify=verify):
                 found.append((y, is_on_sail_general(y, ctx), "box_exhausted"))
 
     canon = ctx.normalizer
@@ -157,7 +157,7 @@ def minimal_elements(ctx, signature=None, bound=None, verify=True):
         if key not in seen or on_sail:
             seen[key] = (c, on_sail, reason)
     out = sorted(seen.values(), key=lambda t: canon.sort_key(t[0]))
-    logger.info("%s signature %s: %s minimal, %s on the sail",
+    logger.info("%s signature %s: %s s-indecomposable, %s on the sail",
                 ctx.label or ctx.K, signature, len(out), sum(1 for t in out if t[1]))
     return out
 
@@ -182,13 +182,13 @@ def is_on_sail_general(x, ctx):
 # ---------------------------------------------------------------------------
 
 def indecomposables_exhaustive(ctx, verify=True):
-    """All indecomposables, i.e. the minimal elements of the totally positive class."""
-    return [(y, on_sail) for y, on_sail, _ in minimal_elements(ctx, verify=verify)]
+    """All indecomposables, i.e. the s-indecomposables of the totally positive class."""
+    return [(y, on_sail) for y, on_sail, _ in indecomposables_in_class(ctx, verify=verify)]
 
 
 def all_signature_classes(ctx, verify=True):
     """
-    Minimal elements in every signature class.
+    The s-indecomposables of every signature class.
 
     Returns ``(masks, signatures, results)`` with ``results`` a list parallel to
     ``signatures``, index 0 being the totally positive class -- matching the
@@ -197,7 +197,7 @@ def all_signature_classes(ctx, verify=True):
     masks, sigs = field_signature_classes(ctx)
     results = []
     for sig in sigs:
-        results.append(minimal_elements(ctx, sig, verify=verify))
+        results.append(indecomposables_in_class(ctx, sig, verify=verify))
     assert masks[0] == 0 and vector_to_mask(sigs[0]) == 0, \
         "class 0 must be the totally positive one"
     return masks, sigs, results
