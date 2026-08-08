@@ -12,8 +12,16 @@
 #          xxx[][] -> list of lists. Postgres accepts a multi-dimensional
 #          declaration and ignores the extra dimensions, so writing
 #          `numeric[][]` is valid DDL and records the nesting we need.
-#   tier   arrays and jsonb go in degree<n>.txt only; scalars go in both
-#          files. State `tier:` explicitly only to override that.
+#   -- and one that is always stated, because a wrong guess here silently
+#      changes what gets published:
+#
+#   files      which data files the column is written to, a subset of
+#              [mini, full].  [mini, full] -> both.  [full] -> degree<n>.txt
+#              only.  [] -> declared but not written anywhere: a column we
+#              intend to add, kept here so its name, type and meaning are
+#              settled in advance.  `mini` without `full` is rejected, since
+#              degree<n>_mini.txt is generated from degree<n>.txt by projection
+#              and a mini-only column would have nothing to project from.
 #
 # Column order here is the column order in the data files.
 #
@@ -26,7 +34,7 @@
 # Once data is published: append columns, never reorder or remove them, and
 # never repurpose a name. Bump `version` for any change.
 
-version: 3
+version: 5
 
 # Columns every row must carry.
 required: [lmfdb_label, degree, discriminant]
@@ -37,210 +45,291 @@ columns:
 
   lmfdb_label:
     type: text
+    files: [mini, full]
     short_doc: 'LMFDB label of the totally real field K'
     long_doc: >-
       The label of K in the LMFDB, of the form n.n.|disc|.i since K is totally real. It determines the defining polynomial, and hence the ordering of the real embeddings and the integral basis that every coefficient vector here refers to.
 
   degree:
     type: smallint
+    files: [mini, full]
     short_doc: 'degree n of K'
 
   discriminant:
     type: numeric
+    files: [mini, full]
     short_doc: 'discriminant of K'
 
   # ---- invariants of K, joined from LMFDB rather than recomputed -
 
   regulator:
     type: double precision
+    files: [mini, full]
     short_doc: 'regulator of K'
 
   class_number:
     type: integer
+    files: [mini, full]
     short_doc: 'class number h of K'
 
   narrow_class_number:
     type: integer
+    files: [mini, full]
     short_doc: 'narrow class number h+ of K'
     long_doc: >-
       Satisfies h+/h = num_signature_classes = 2^(n-r), which is a useful consistency check across three independently computed columns.
 
   is_monogenic:
     type: smallint
+    files: [mini, full]
     short_doc: '1 if monogenic, -1 if not, 0 if unknown'
 
   monogenic_index:
     type: numeric
+    files: [mini, full]
     short_doc: 'index [O_K : Z[a]] of the power order'
 
   num_subfields:
     type: smallint
+    files: [mini, full]
     short_doc: 'number of subfields, excluding Q and K'
 
   is_galois:
     type: smallint
+    files: [mini, full]
     short_doc: 'whether K/Q is Galois'
 
   galois_label:
     type: text
+    files: [mini, full]
     short_doc: 'LMFDB label nTt of the Galois group'
 
   family:
     type: text
+    files: [mini, full]
     short_doc: 'recognised family, e.g. simplest_cubic or biquadratic; NULL otherwise'
 
   family_parameter:
     type: numeric
+    files: [mini, full]
     short_doc: 'the family''s parameter, when scalar'
 
   # ---- units and signature classes -------------------------------
 
   unit_signature_rank:
     type: smallint
+    files: [mini, full]
     short_doc: 'rank r over F_2 of the signature map on the unit group'
 
   num_signature_classes:
     type: smallint
+    files: [mini, full]
     short_doc: 'number of signature classes, equal to 2^(n-r) and to h+/h'
     long_doc: >-
       Multiplication by a unit maps elements of signature sigma to signature sigma.sig(u), so sails and minimal elements depend only on the coset of sigma modulo Sig(U). This counts those cosets.
 
   totally_positive_unit_index:
     type: integer
+    files: [mini, full]
     short_doc: 'index [U : U^+]'
 
   # ---- indecomposables (the totally positive signature class) ----
 
   num_indecomposables:
     type: integer
+    files: [mini, full]
     short_doc: 'number of indecomposables up to multiplication by totally positive units'
 
   num_on_sail:
     type: integer
+    files: [mini, full]
     short_doc: 'how many of them lie on the sail; equals num_indecomposables when n = 2'
     long_doc: >-
       Every lattice point on the sail is indecomposable, but for degree at least 3 the converse fails, so this can be strictly smaller than num_indecomposables. The size of the gap is one of the things this database is for.
 
   min_norm_indecomposable:
     type: numeric
+    files: [mini, full]
     short_doc: 'smallest norm of a non-unit indecomposable, NULL if there is none'
     long_doc: >-
       NULL when the only indecomposables are units, which happens for instance for Q(sqrt 5).
 
   max_norm_indecomposable:
     type: numeric
+    files: [mini, full]
     short_doc: 'largest norm of an indecomposable'
     long_doc: >-
       Bounded above by |disc| in general (Kala-Yatsyna), and by disc/4 in degree 2 (Dress-Scharlau).
 
   min_trace_indecomposable:
     type: numeric
+    files: [mini, full]
     short_doc: 'smallest trace among the canonical representatives'
 
   max_trace_indecomposable:
     type: numeric
+    files: [mini, full]
     short_doc: 'largest trace among the canonical representatives'
 
   min_norm_decomposable:
     type: numeric
+    files: [mini, full]
     short_doc: 'smallest norm of a decomposable in O_K^+ not lying in m O_K^+ for some m >= 2'
 
   min_norm_all_signatures:
     type: numeric
+    files: [mini, full]
     short_doc: 'least k such that every signature class contains an element of absolute norm <= k'
 
   min_norm_fprimea_signature:
     type: numeric
+    files: [mini, full]
     short_doc: 'smallest absolute norm in the signature class containing f''(a)'
 
   num_minimal_total:
     type: integer
+    files: [mini, full]
     short_doc: 'total number of minimal elements summed over all signature classes'
 
   # ---- sail ------------------------------------------------------
 
   num_sail_facets:
     type: integer
+    files: [mini, full]
     short_doc: 'facets of the totally positive sail'
 
   sail_complete:
     type: smallint
+    files: [mini, full]
     short_doc: 'whether the completeness certificate passed for the totally positive sail'
     long_doc: >-
       Set when every codimension-2 face of every facet is paired with another, which certifies that the facets tile a closed surface modulo units rather than that the search merely stopped.
 
   all_signatures_complete:
     type: smallint
+    files: [mini, full]
     short_doc: 'whether every signature class finished and certified'
 
   # ---- arrays, stored in degree<n>.txt only ----------------------
 
   coeffs:
     type: numeric[]
+    files: [full]
     short_doc: 'coefficients of the LMFDB defining polynomial, constant term first'
 
   fundamental_units:
     type: numeric[][]
+    files: [full]
     short_doc: 'fundamental units as coefficient vectors'
 
   positive_unit_basis:
     type: numeric[][]
+    files: [full]
     short_doc: 'Z-basis of the totally positive units as coefficient vectors'
 
   signatures:
     type: smallint[][]
+    files: [full]
     short_doc: 'canonical representatives of the signature classes as +-1 vectors; defines the index order of every _by_signature column, with index 0 the totally positive class'
     long_doc: >-
       Canonical representatives are the numerically smallest bitmask in each coset, listed ascending, so index 0 is always the totally positive class and every representative begins with +. The embeddings sigma_1 ... sigma_n are ordered by increasing sigma_i(a), where a is the root of the LMFDB defining polynomial.
 
   signature_masks:
     type: smallint[]
+    files: [full]
     short_doc: 'the same classes as bitmasks (+ -> 0, - -> 1, sigma_1 most significant), ascending'
 
   num_minimal_by_signature:
     type: integer[]
+    files: [full]
     short_doc: 'number of minimal elements in each signature class'
 
   minimal_by_signature:
     type: jsonb
+    files: [full]
     short_doc: 'minimal elements of each signature class, in canonical form, as coefficient vectors; jagged, so JSON rather than a Postgres array'
     long_doc: >-
       For a general signature class S_sigma is not closed under addition, so 'indecomposable' does not transfer literally. What does is: alpha in S_sigma is minimal if no beta in S_sigma has |sigma_i(beta)| < |sigma_i(alpha)| for all i. On the totally positive class this is exactly indecomposability.
 
   minimal_norms_by_signature:
     type: jsonb
+    files: [full]
     short_doc: 'absolute norms of minimal_by_signature, same order'
 
   indecomposables:
     type: numeric[][]
+    files: [full]
     short_doc: 'the totally positive class of minimal_by_signature, i.e. the indecomposables; duplicated here because it is what most users want'
 
   indecomposables_norms:
     type: numeric[]
+    files: [full]
     short_doc: 'norms, same order'
 
   indecomposables_traces:
     type: numeric[]
+    files: [full]
     short_doc: 'traces, same order'
 
   indecomposables_on_sail:
     type: smallint[]
+    files: [full]
     short_doc: '0/1 flags, same order, for whether each lies on the sail'
 
   sail_facet_normals:
     type: jsonb
+    files: [full]
     short_doc: 'per signature class, the facet normals lambda in the codifferent as coefficient vectors; each facet is the hyperplane Tr(lambda x) = 1'
     long_doc: >-
       Each facet of the sail is the hyperplane Tr(lambda x) = 1 for a totally positive lambda in the codifferent. Such a lambda proves every element on that facet indecomposable, since Tr(lambda beta) >= 1 for all totally positive beta.
 
   sail_facet_vertices:
     type: jsonb
+    files: [full]
     short_doc: 'per signature class, per facet, indices into minimal_by_signature of that class; indices rather than coordinates so the two cannot disagree'
 
   num_sail_facets_by_signature:
     type: integer[]
+    files: [full]
     short_doc: 'facet count per signature class'
 
   sail_complete_by_signature:
     type: smallint[]
+    files: [full]
     short_doc: '0/1 completeness certificate per signature class'
+
+  # ---- reserved: declared but written to no file (files: []) ------------
+  # Kept here so the names, types and definitions are settled before any data
+  # is published.  Add `mini` or `full` to `files` to start emitting one; no
+  # other change is needed.
+
+  codifferent_traces:
+    type: numeric[]
+    files: []
+    short_doc: 'for each indecomposable, the least Tr(lambda alpha) over totally positive lambda in the codifferent'
+    long_doc: >-
+      Equals 1 exactly when alpha lies on the sail, so this is a graded refinement of indecomposables_on_sail. Known to be 1 throughout for real quadratic fields and at most 2 for simplest cubics, and Kala-Tinkova show it can be arbitrarily large in other families; its distribution is not known.
+
+  max_codifferent_trace:
+    type: smallint
+    files: []
+    short_doc: 'largest entry of codifferent_traces'
+    long_doc: >-
+      Equal to 1 exactly when every indecomposable lies on the sail, so it is a scalar version of num_on_sail == num_indecomposables that can be filtered on directly.
+
+  num_sail_vertices:
+    type: integer
+    files: []
+    short_doc: 'extreme points of the sail, as opposed to all lattice points on it'
+    long_doc: >-
+      In degree 2 this is the distinction between convergents and semiconvergents. Derivable from sail_facet_vertices, but stored so it can be queried without reading the array.
+
+  min_norm_by_signature:
+    type: integer[]
+    files: []
+    short_doc: 'smallest absolute norm among the minimal elements of each signature class'
+
+  max_norm_by_signature:
+    type: integer[]
+    files: []
+    short_doc: 'largest absolute norm among the minimal elements of each signature class'
