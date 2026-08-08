@@ -286,7 +286,8 @@ class UnitOrbitNormalizer:
 
         tc = centre - Lx
         # y* solves G y = B tc; approximate solution is fine, radius is inflated.
-        y = G.solve_right(B * tc)
+        from .certify import _solve_spd
+        y = _solve_spd(G, B * tc)
         rho = radius * R(1.001) + R(2) ** (-prec // 4)
 
         exps = _enumerate_close(G, y, rho ** 2, self.rank, self.MAX_CANDIDATES)
